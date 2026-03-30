@@ -2,14 +2,29 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Result",
   "type": "object",
-  "required": ["summary", "changes", "artifacts", "risks", "unknowns", "next_suggestion"],
+  "required": [
+    "summary",
+    "changes",
+    "artifacts",
+    "risks",
+    "unknowns",
+    "next_suggestion",
+    "transport_error",
+    "protocol_error",
+    "semantic_error",
+    "raw_excerpt"
+  ],
   "properties": {
     "summary": { "type": "string" },
     "changes": { "type": "array", "items": { "type": "string" } },
     "artifacts": { "type": "array", "items": { "type": "string" } },
     "risks": { "type": "array", "items": { "type": "string" } },
     "unknowns": { "type": "array", "items": { "type": "string" } },
-    "next_suggestion": { "type": "string" }
+    "next_suggestion": { "type": "string" },
+    "transport_error": { "type": "boolean" },
+    "protocol_error": { "type": "boolean" },
+    "semantic_error": { "type": "boolean" },
+    "raw_excerpt": { "type": "string" }
   },
   "additionalProperties": true
 }

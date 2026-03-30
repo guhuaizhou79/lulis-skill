@@ -16,6 +16,10 @@
     "context_refs": { "type": "array", "items": { "type": "string" } },
     "subtasks": { "type": "array", "items": { "type": "object" } },
     "artifacts": { "type": "array", "items": { "type": "string" } },
+    "deliverables": { "type": "array", "items": { "type": "string" } },
+    "delivery_summary": { "type": "string" },
+    "delivery_status": { "type": "string", "enum": ["not_started", "assembled", "delivered", "not_delivered", "unknown"] },
+    "planning_profile": { "type": "string", "enum": ["direct_review", "research_execute_review", "research_execute_review_strict"] },
     "history": { "type": "array", "items": { "type": "object" } }
   },
   "additionalProperties": true

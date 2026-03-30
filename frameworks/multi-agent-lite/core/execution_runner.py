@@ -11,7 +11,12 @@ def execute_subtasks(task: Dict[str, Any], executor) -> Dict[str, Any]:
         role = subtask.get("assigned_role", "")
         try:
             result = executor.run(role, subtask, task)
-            status = "completed"
+            has_primary_error = any([
+                result.get("transport_error"),
+                result.get("protocol_error"),
+                result.get("semantic_error"),
+            ])
+            status = "failed" if has_primary_error else "completed"
         except Exception as e:
             result = {
                 "summary": f"executor failed unexpectedly: {str(e)}",
@@ -20,7 +25,10 @@ def execute_subtasks(task: Dict[str, Any], executor) -> Dict[str, Any]:
                 "risks": [str(e)],
                 "unknowns": [],
                 "next_suggestion": "review orchestrator logs",
-                "executor_error": True,
+                "transport_error": True,
+                "protocol_error": False,
+                "semantic_error": False,
+                "raw_excerpt": str(e)[:500],
             }
             status = "failed"
 

@@ -29,6 +29,62 @@ class OpenClawExecutor:
                 return [str(cand)]
         raise FileNotFoundError("openclaw executable not found")
 
+    def _envelope(
+        self,
+        *,
+        summary: str,
+        changes: list[str] | None = None,
+        artifacts: list[str] | None = None,
+        risks: list[str] | None = None,
+        unknowns: list[str] | None = None,
+        next_suggestion: str = "",
+        transport_error: bool = False,
+        protocol_error: bool = False,
+        semantic_error: bool = False,
+        raw_excerpt: str = "",
+    ) -> Dict[str, Any]:
+        return {
+            "summary": summary,
+            "changes": changes or [],
+            "artifacts": artifacts or [],
+            "risks": risks or [],
+            "unknowns": unknowns or [],
+            "next_suggestion": next_suggestion,
+            "transport_error": transport_error,
+            "protocol_error": protocol_error,
+            "semantic_error": semantic_error,
+            "raw_excerpt": raw_excerpt,
+        }
+
+    def _normalize_result(self, parsed: Dict[str, Any], raw_excerpt: str) -> Dict[str, Any]:
+        result = self._envelope(
+            summary=str(parsed.get("summary", "")).strip(),
+            changes=list(parsed.get("changes") or []),
+            artifacts=list(parsed.get("artifacts") or []),
+            risks=list(parsed.get("risks") or []),
+            unknowns=list(parsed.get("unknowns") or []),
+            next_suggestion=str(parsed.get("next_suggestion", "")).strip(),
+            transport_error=bool(parsed.get("transport_error", False)),
+            protocol_error=bool(parsed.get("protocol_error", False)),
+            semantic_error=bool(parsed.get("semantic_error", False)),
+            raw_excerpt=raw_excerpt,
+        )
+
+        meaningful = any([
+            result["summary"],
+            result["changes"],
+            result["artifacts"],
+            result["risks"],
+            result["unknowns"],
+            result["next_suggestion"],
+        ])
+        if not meaningful:
+            result["semantic_error"] = True
+            result["summary"] = "executor returned an empty semantic payload"
+            result["next_suggestion"] = "tighten task objective or improve executor prompt"
+
+        return result
+
     def build_prompt(self, role: str, subtask: Dict[str, Any], task: Dict[str, Any]) -> str:
         payload = {
             "role": role,
@@ -42,7 +98,7 @@ class OpenClawExecutor:
             "你是多agent框架中的一个执行角色。"
             "严格只输出 JSON，不要 markdown，不要解释。"
             "JSON 结构必须为: "
-            '{"summary":"...","changes":["..."],"artifacts":["..."],"risks":["..."],"unknowns":["..."],"next_suggestion":"..."}'
+            '{"summary":"...","changes":["..."],"artifacts":["..."],"risks":["..."],"unknowns":["..."],"next_suggestion":"...","transport_error":false,"protocol_error":false,"semantic_error":false,"raw_excerpt":"..."}'
             f"\n输入任务: {json.dumps(payload, ensure_ascii=False)}"
         )
 
@@ -61,7 +117,7 @@ class OpenClawExecutor:
         ]
         env = os.environ.copy()
         env.setdefault("PYTHONIOENCODING", "utf-8")
-        
+
         try:
             proc = subprocess.run(
                 cmd,
@@ -70,25 +126,21 @@ class OpenClawExecutor:
                 env=env,
             )
         except subprocess.TimeoutExpired as e:
-            return {
-                "summary": "openclaw executor timeout",
-                "changes": [],
-                "artifacts": [],
-                "risks": [f"Execution timed out after {self.timeout + 30} seconds"],
-                "unknowns": [],
-                "next_suggestion": "increase timeout or optimize subtask",
-                "executor_error": True,
-            }
+            return self._envelope(
+                summary="openclaw executor timeout",
+                risks=[f"Execution timed out after {self.timeout + 30} seconds"],
+                next_suggestion="increase timeout or optimize subtask",
+                transport_error=True,
+                raw_excerpt=str(e)[:500],
+            )
         except Exception as e:
-            return {
-                "summary": f"openclaw executor crashed: {str(e)}",
-                "changes": [],
-                "artifacts": [],
-                "risks": [str(e)],
-                "unknowns": [],
-                "next_suggestion": "check executor environment or fallback to mock",
-                "executor_error": True,
-            }
+            return self._envelope(
+                summary=f"openclaw executor crashed: {str(e)}",
+                risks=[str(e)],
+                next_suggestion="check executor environment or fallback to mock",
+                transport_error=True,
+                raw_excerpt=str(e)[:500],
+            )
 
         def safe_decode(b: bytes | None) -> str:
             if not b:
@@ -103,27 +155,25 @@ class OpenClawExecutor:
 
         stdout = safe_decode(proc.stdout).strip()
         stderr = safe_decode(proc.stderr).strip()
+        raw_excerpt = (stdout or stderr)[:1000]
+
         if proc.returncode != 0:
-            return {
-                "summary": "openclaw executor failed",
-                "changes": [],
-                "artifacts": [],
-                "risks": [stdout[:1000] or stderr[:1000] or "executor error"],
-                "unknowns": [],
-                "next_suggestion": "fallback to mock executor or inspect runtime",
-                "executor_error": True,
-            }
+            return self._envelope(
+                summary="openclaw executor failed",
+                risks=[raw_excerpt or "executor error"],
+                next_suggestion="fallback to mock executor or inspect runtime",
+                transport_error=True,
+                raw_excerpt=raw_excerpt,
+            )
 
         parsed = extract_json_object(stdout)
         if parsed is not None:
-            return parsed
+            return self._normalize_result(parsed, raw_excerpt)
 
-        return {
-            "summary": "openclaw executor returned non-json",
-            "changes": [],
-            "artifacts": [],
-            "risks": [stdout[:1000] or stderr[:1000]],
-            "unknowns": [],
-            "next_suggestion": "tighten prompt or improve parser",
-            "parse_error": True,
-        }
+        return self._envelope(
+            summary="openclaw executor returned non-json",
+            risks=[raw_excerpt],
+            next_suggestion="tighten prompt or improve parser",
+            protocol_error=True,
+            raw_excerpt=raw_excerpt,
+        )

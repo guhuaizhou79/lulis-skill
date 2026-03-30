@@ -2,15 +2,15 @@
 
 ## Current definition
 
-`multi-agent-lite` is the lightweight multi-agent collaboration framework built in the workspace.
+`multi-agent-lite` is a lightweight staged orchestration framework for OpenClaw.
 
 It currently supports:
-- task creation,
-- planning,
-- role-based dispatch,
-- executor adapter execution,
-- review loop,
-- done / send-back flow.
+- task creation
+- planning
+- role-based dispatch
+- executor-backed execution
+- review loop
+- done / send-back flow
 
 ## Current role set
 
@@ -19,23 +19,29 @@ It currently supports:
 - execution
 - reviewer
 
-## Current model routing
-
-- manager → `gpt-5.4`
-- research → `claude-sonnet-4-20250514`
-- execution_code → `gpt-5-codex`
-- execution_general → `gpt-5.4`
-- reviewer → `o3`
-
 ## Current maturity
 
-Treat it as `v0.1`:
-- the main chain is real and usable,
-- the OpenClaw executor is connected,
-- a remaining tail exists in Chinese text display/encoding quality.
+Treat it as `v0.1`.
 
-## Practical guidance
+The main chain already has real prototype value, but the executor contract and real runtime stability still have tail risk. This should be described as an internal or controlled-trial framework, not as a mature production platform.
 
-Use it when staged orchestration adds value.
-Do not force it onto simple tasks.
-If consuming raw executor output for user-facing prose, perform one extra clean-up/sanity pass.
+## What is working
+
+- end-to-end staged flow exists
+- OpenClaw executor integration exists
+- planning / dispatch / execution / review are connected
+- reviewer is starting to check delivery quality, not only process state
+
+## What is still weak
+
+- executor output remains dependent on prompt and transport quality
+- protocol failures and semantic failures still need stricter enforcement over time
+- plan shapes are still limited and not yet fully task-shape driven
+- some maturity / routing truths still need further SSOT cleanup across the repo
+
+## Interpretation rules
+
+- Use it when staged orchestration clearly improves quality or controllability.
+- Do not force it onto simple work.
+- Do not treat orchestration as business truth.
+- If user-facing output depends on raw executor output, do one extra sanity pass.

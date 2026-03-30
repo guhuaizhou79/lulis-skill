@@ -20,6 +20,8 @@ Treat this as `v0.1`:
 - main chain works,
 - OpenClaw executor is connected,
 - executor robustness has improved with output decoding, JSON extraction tolerance, and fallback handling,
+- planning now follows explicit profile selection instead of a single fixed path,
+- reviewer now checks task-level delivery signals instead of only process completion,
 - there is still a gap between a usable internal pipeline and a fully production-hardened autonomous platform.
 
 ## Recommended interpretation
@@ -31,12 +33,14 @@ Its strongest value is staged quality control:
 - execution,
 - review.
 
-The framework now also begins to distinguish lightweight planning profiles:
+The framework now distinguishes lightweight planning profiles:
 - `direct_review`
 - `research_execute_review`
 - `research_execute_review_strict`
 
-It also now starts to encode simple task-type expectations and stronger reviewer checks, so the framework is moving from pure process control toward basic delivery-quality control.
+These profiles are selected from task type, priority, acceptance items, and constraints, so plan shape is now more explicit and closer to SSOT.
+
+The framework also now encodes simple task-type expectations and stronger reviewer checks, so it is moving from pure process control toward basic delivery-quality control.
 
 This is still intentionally simple, but it is a better direction than forcing the same plan shape for every task.
 

@@ -19,6 +19,13 @@ class TaskStore:
 
     def save(self, task: Dict[str, Any]) -> Path:
         path = self.task_path(task["task_id"])
+        task.setdefault("history", [])
+        task.setdefault("artifacts", [])
+        task.setdefault("deliverables", [])
+        task.setdefault("delivery_summary", "")
+        task.setdefault("delivery_status", "not_started")
+        if "planning_profile" not in task:
+            task["planning_profile"] = "direct_review"
         path.write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 

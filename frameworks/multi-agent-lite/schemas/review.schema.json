@@ -2,7 +2,20 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Review",
   "type": "object",
-  "required": ["review_id", "task_id", "reviewer", "model", "decision", "reasons", "next_action"],
+  "required": [
+    "review_id",
+    "task_id",
+    "reviewer",
+    "model",
+    "decision",
+    "reasons",
+    "next_action",
+    "acceptance_results",
+    "delivery_status",
+    "blocking_gaps",
+    "residual_risks",
+    "recommended_sendback_target"
+  ],
   "properties": {
     "review_id": { "type": "string" },
     "task_id": { "type": "string" },
@@ -10,7 +23,24 @@
     "model": { "type": "string" },
     "decision": { "type": "string", "enum": ["approved", "changes_requested", "rejected"] },
     "reasons": { "type": "array", "items": { "type": "string" } },
-    "next_action": { "type": "string" }
+    "next_action": { "type": "string" },
+    "acceptance_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["item", "status", "evidence"],
+        "properties": {
+          "item": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "fail", "unknown"] },
+          "evidence": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "delivery_status": { "type": "string" },
+    "blocking_gaps": { "type": "array", "items": { "type": "string" } },
+    "residual_risks": { "type": "array", "items": { "type": "string" } },
+    "recommended_sendback_target": { "type": "string" }
   },
   "additionalProperties": true
 }

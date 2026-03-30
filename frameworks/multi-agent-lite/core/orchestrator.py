@@ -34,12 +34,12 @@ class Orchestrator:
         cfg_path = self.root / "configs" / "executor.json"
         if not cfg_path.exists():
             return MockExecutor()
-        
+
         try:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except Exception:
             return MockExecutor()
-            
+
         mode = cfg.get("mode", "mock")
         if mode == "openclaw":
             oc = cfg.get("openclaw", {})
@@ -49,7 +49,6 @@ class Orchestrator:
                     timeout=int(oc.get("timeout", 180)),
                 )
             except FileNotFoundError:
-                # Fallback to mock executor if openclaw executable is not found
                 return MockExecutor()
         return MockExecutor()
 
@@ -76,6 +75,9 @@ class Orchestrator:
             "subtasks": [],
             "dispatch_summary": {},
             "artifacts": [],
+            "deliverables": [],
+            "delivery_summary": "",
+            "delivery_status": "not_started",
             "history": [],
             "reviews": [],
         }
@@ -150,6 +152,23 @@ class Orchestrator:
                 "note": "executor started",
             })
         task = execute_subtasks(task, self.executor)
+
+        deliverables = list(task.get("artifacts", []))
+        exec_summaries = []
+        for st in task.get("subtasks", []):
+            if st.get("assigned_role") in {"execution_code", "execution_general"}:
+                result = st.get("result") or {}
+                summary = str(result.get("summary") or "").strip()
+                if summary:
+                    exec_summaries.append(summary)
+                for artifact in result.get("artifacts") or []:
+                    if artifact not in deliverables:
+                        deliverables.append(artifact)
+
+        task["deliverables"] = deliverables
+        task["delivery_summary"] = " | ".join(exec_summaries[:3])
+        task["delivery_status"] = "assembled" if (task["deliverables"] or task["delivery_summary"]) else "not_delivered"
+
         self.store.append_history(task, {
             "event": "execution_completed",
             "completed_subtasks": len(task.get("subtasks", [])),
@@ -170,6 +189,7 @@ class Orchestrator:
             })
         review = self.reviewer.evaluate(task)
         task = apply_review(task, review)
+        task["delivery_status"] = review.get("delivery_status", task.get("delivery_status", "unknown"))
         self.store.append_history(task, {
             "event": "review_completed",
             "decision": review["decision"],

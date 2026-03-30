@@ -1,82 +1,59 @@
 ---
 name: multi-agent-lite
-description: Use when the user wants a lightweight multi-agent collaboration workflow in OpenClaw: task planning, role-based dispatch, execution, review loops, or asks to use the previously defined manager/research/execution/reviewer framework. Best for tasks complex enough to benefit from staged orchestration but not so heavy that a large agent platform is justified.
+description: Use when the user explicitly wants a lightweight multi-agent collaboration workflow in OpenClaw, asks for staged orchestration (manager / research / execution / reviewer), or the task is complex enough that planning, execution, and review should be separated. Do not use for simple one-turn tasks, casual Q&A, or high-risk external actions without a safe staged path.
 ---
 
 # Multi-Agent Lite
 
-Use this skill when the task should be routed through the lightweight multi-agent framework instead of a single-agent direct response.
+Use this skill only when staged orchestration adds real value over a direct single-agent response.
 
-## When to use
+## Route into this skill when
 
-Trigger when the user asks for any of these patterns:
-- 多 agent 协同 / 多智能体协同
-- 按之前那套轻量多-agent框架来
-- manager / research / execution / reviewer
-- 拆任务、分派、执行、review 的链路
-- 复杂任务需要阶段化 orchestration
+Trigger when the user clearly wants one of these patterns:
+- 多 agent / 多智能体协同
+- 按 manager / research / execution / reviewer 的链路推进
+- 先规划、再执行、再 review 的阶段化流程
+- 需要更强的任务拆分、分派、审查、回退机制
 
-Do **not** use when:
-- the task is simple enough for one direct agent turn,
-- there is no real benefit from splitting roles,
-- the task is mostly casual Q&A,
-- external-risk actions need human approval and no safe staged path is defined.
+## Do not route into this skill when
 
-## Core workflow
+Stay in single-agent mode when any of these is true:
+- the task is small enough to finish well in one direct turn
+- the work is mostly casual Q&A or lightweight discussion
+- splitting roles adds ceremony but not clarity or quality
+- the task requires external risky actions and no safe staged approval path exists
 
-Route tasks through these stages:
+## Why use it
 
-1. `create task`
-2. `plan task`
-3. `dispatch subtasks`
-4. `execute subtasks`
-5. `review outcome`
-6. `done` or `send back to plan`
+Use `multi-agent-lite` to gain four things:
+- clearer task decomposition
+- explicit role ownership
+- review before declaring completion
+- auditable send-back when output is not ready
 
-## Default roles
+This skill improves orchestration discipline. It does **not** by itself guarantee business correctness, production safety, or domain truth.
 
-Use only these four roles unless the framework is explicitly expanded:
-- `manager`
-- `research`
-- `execution`
-- `reviewer`
+## Completion standard
 
-Keep the framework lean. Do not invent many permanent roles.
+Treat the workflow as complete only when all of the following are true:
+- the task has a usable task-level deliverable, not only subtask fragments
+- the deliverable materially addresses the original goal
+- acceptance items were checked with evidence where possible
+- unresolved risks and unknowns are stated plainly
+- review decides `approved`
 
-## Default model routing
-
-- manager → `gpt-5.4`
-- research → `claude-sonnet-4-20250514`
-- execution_code → `gpt-5-codex`
-- execution_general → `gpt-5.4`
-- reviewer → `o3`
-- fallback low-cost → `gpt-4o-mini` / `gpt-4.1-mini`
-
-## Execution policy
-
-Prefer the framework's executor adapter instead of inventing ad-hoc multi-agent flows.
-
-Current implementation status:
-- the `multi-agent-lite` framework already supports planning / dispatch / execution / review,
-- OpenClaw executor integration exists,
-- there is still a known Chinese text encoding/display tail in real executor output.
-
-So when using this skill:
-- treat the framework as usable,
-- but be candid that executor output quality still has a display-layer limitation,
-- for final user-facing prose, do one extra sanity pass if real executor output is consumed.
-
-## Files to read when needed
-
-Read these only when needed:
-- `references/framework-status.md` → current state, limitations, and next-step guidance
-- `references/repo-layout.md` → how the skill repo and framework repo should stay organized
-- `references/project-usage-guide.md` → how to use this framework for real project delivery and when not to
+If those conditions are not met, send the task back instead of declaring success.
 
 ## Operating rules
 
-- Prefer the existing framework path over inventing a parallel one.
-- Keep orchestration serial and understandable unless concurrency is truly needed.
-- Preserve auditability: task status, subtask assignment, execution result, review result.
-- If the task is too small, explicitly choose not to use multi-agent mode.
-- If the task is blocked by environment/runtime issues, say so plainly.
+- Prefer the existing framework path instead of inventing an ad-hoc parallel orchestration flow.
+- Keep the role set lean unless there is a strong reason to expand it.
+- Prefer understandable serial orchestration over unnecessary concurrency.
+- Be explicit when choosing **not** to use multi-agent mode.
+- If runtime or executor quality is degraded, say so plainly and downgrade the promise.
+
+## Read only when needed
+
+- `references/framework-status.md` → current maturity, limitations, and interpretation
+- `references/repo-layout.md` → repo boundaries and file ownership
+- `references/project-usage-guide.md` → project-facing usage guidance
