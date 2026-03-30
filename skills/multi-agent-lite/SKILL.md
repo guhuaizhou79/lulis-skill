@@ -71,6 +71,7 @@ So when using this skill:
 Read these only when needed:
 - `references/framework-status.md` → current state, limitations, and next-step guidance
 - `references/repo-layout.md` → how the skill repo and framework repo should stay organized
+- `references/project-usage-guide.md` → how to use this framework for real project delivery and when not to
 
 ## Operating rules
 
