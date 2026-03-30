@@ -10,7 +10,7 @@ from .dispatcher import Dispatcher
 from .execution_runner import execute_subtasks
 from .mock_executor import MockExecutor
 from .openclaw_executor import OpenClawExecutor
-from .planner import build_plan
+from .planner import build_plan, select_planning_profile
 from .reporting import summarize_dispatches
 from .review_engine import ReviewEngine
 from .review_state import apply_review
@@ -104,6 +104,7 @@ class Orchestrator:
         task = self.store.load(task_id)
         if task["status"] == "NEW":
             task = self.transition(task_id, "PLAN", note="planning started")
+        task["planning_profile"] = select_planning_profile(task)
         task["subtasks"] = build_plan(task)
         self.store.append_history(task, {
             "event": "plan_built",

@@ -31,6 +31,13 @@ Its strongest value is staged quality control:
 - execution,
 - review.
 
+The framework now also begins to distinguish lightweight planning profiles:
+- `direct_review`
+- `research_execute_review`
+- `research_execute_review_strict`
+
+This is still intentionally simple, but it is a better direction than forcing the same plan shape for every task.
+
 Do not confuse the orchestration layer with business truth.
 Business rules, mappings, templates, and project-specific validation should remain separate.
 
