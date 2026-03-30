@@ -1,13 +1,27 @@
 # multi-agent-lite
 
-轻量多 Agent 协同框架原型。
+A lightweight multi-agent collaboration framework for OpenClaw.
 
-## 当前包含
-- 角色分层：manager / research / execution / reviewer
-- 状态机：NEW → PLAN → READY → EXECUTING → REVIEW → DONE
-- 文件态任务存储
-- 模型路由配置
-- schema 基础定义
+## What it is
 
-## 目标
-先形成可运行闭环，再逐步增加执行器、review 机制、subtask 分派。
+A staged orchestration path built around:
+- manager
+- research
+- execution
+- reviewer
+
+## Current flow
+
+`create task -> plan -> dispatch -> execute -> review -> done / send back`
+
+## Current maturity
+
+Treat this as `v0.1`:
+- main chain works,
+- OpenClaw executor is connected,
+- there is still a known Chinese output display/encoding quality tail.
+
+## Notes
+
+This folder holds the framework implementation.
+The triggerable skill lives in `../../skills/multi-agent-lite/`.
