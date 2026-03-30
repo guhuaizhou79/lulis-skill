@@ -38,4 +38,4 @@ Business rules, mappings, templates, and project-specific validation should rema
 
 This folder holds the framework implementation.
 The triggerable skill lives in `../../skills/multi-agent-lite/`.
-For project-facing operating guidance, also see `../../skills/multi-agent-lite/references/project-usage-guide.md` and `../../docs/MULTI-MODEL-ADOPTION.md`.
+For project-facing operating guidance, also see `../../skills/multi-agent-lite/references/project-usage-guide.md`, `../../docs/MULTI-MODEL-ADOPTION.md`, and `../../docs/OPTIMIZATION-NOTES-2026-03-30.md`.
