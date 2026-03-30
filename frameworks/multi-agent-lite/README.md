@@ -36,6 +36,8 @@ The framework now also begins to distinguish lightweight planning profiles:
 - `research_execute_review`
 - `research_execute_review_strict`
 
+It also now starts to encode simple task-type expectations and stronger reviewer checks, so the framework is moving from pure process control toward basic delivery-quality control.
+
 This is still intentionally simple, but it is a better direction than forcing the same plan shape for every task.
 
 Do not confuse the orchestration layer with business truth.

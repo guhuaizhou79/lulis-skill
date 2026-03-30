@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from .task_expectations import get_task_expectations
+
 
 STRICT_TASK_TYPES = {"automation", "framework_design"}
 RESEARCH_HEAVY_TASK_TYPES = {"code", "automation", "framework_design"}
@@ -25,8 +27,9 @@ def build_plan(task: Dict[str, Any]) -> List[Dict[str, Any]]:
     goal = task.get("goal", "")
     task_type = task.get("task_type", "general")
     profile = select_planning_profile(task)
+    expectations = get_task_expectations(task_type)
 
-    execution_role = "execution_code" if task_type in {"code", "framework_design", "automation"} else "execution_general"
+    execution_role = expectations["expected_execution_role"]
     subtasks: List[Dict[str, Any]] = []
 
     if profile in {"research_execute_review", "research_execute_review_strict"}:
