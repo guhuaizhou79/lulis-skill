@@ -61,17 +61,48 @@ class OpenClawExecutor:
         ]
         env = os.environ.copy()
         env.setdefault("PYTHONIOENCODING", "utf-8")
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=self.timeout + 30,
-            env=env,
-        )
-        stdout = (proc.stdout or "").strip()
-        stderr = (proc.stderr or "").strip()
+        
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=self.timeout + 30,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as e:
+            return {
+                "summary": "openclaw executor timeout",
+                "changes": [],
+                "artifacts": [],
+                "risks": [f"Execution timed out after {self.timeout + 30} seconds"],
+                "unknowns": [],
+                "next_suggestion": "increase timeout or optimize subtask",
+                "executor_error": True,
+            }
+        except Exception as e:
+            return {
+                "summary": f"openclaw executor crashed: {str(e)}",
+                "changes": [],
+                "artifacts": [],
+                "risks": [str(e)],
+                "unknowns": [],
+                "next_suggestion": "check executor environment or fallback to mock",
+                "executor_error": True,
+            }
+
+        def safe_decode(b: bytes | None) -> str:
+            if not b:
+                return ""
+            try:
+                return b.decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    return b.decode("gbk")
+                except UnicodeDecodeError:
+                    return b.decode("utf-8", errors="replace")
+
+        stdout = safe_decode(proc.stdout).strip()
+        stderr = safe_decode(proc.stderr).strip()
         if proc.returncode != 0:
             return {
                 "summary": "openclaw executor failed",

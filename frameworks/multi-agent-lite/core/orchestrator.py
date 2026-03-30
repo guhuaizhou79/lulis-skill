@@ -34,14 +34,23 @@ class Orchestrator:
         cfg_path = self.root / "configs" / "executor.json"
         if not cfg_path.exists():
             return MockExecutor()
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            return MockExecutor()
+            
         mode = cfg.get("mode", "mock")
         if mode == "openclaw":
             oc = cfg.get("openclaw", {})
-            return OpenClawExecutor(
-                agent_id=oc.get("agent_id", "main"),
-                timeout=int(oc.get("timeout", 180)),
-            )
+            try:
+                return OpenClawExecutor(
+                    agent_id=oc.get("agent_id", "main"),
+                    timeout=int(oc.get("timeout", 180)),
+                )
+            except FileNotFoundError:
+                # Fallback to mock executor if openclaw executable is not found
+                return MockExecutor()
         return MockExecutor()
 
     def create_task(
