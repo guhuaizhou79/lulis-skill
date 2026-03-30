@@ -1,0 +1,221 @@
+{
+  "task_id": "TASK-6601CA6F",
+  "title": "sample task",
+  "goal": "prove the lightweight multi-agent skeleton works",
+  "status": "DONE",
+  "owner": "manager",
+  "task_type": "framework_design",
+  "priority": "normal",
+  "constraints": [],
+  "acceptance": [
+    "task file created",
+    "state can move to PLAN",
+    "subtasks can be planned",
+    "subtasks can be dispatched with models",
+    "subtasks can execute through executor adapter",
+    "review loop can finish or send back"
+  ],
+  "context_refs": [],
+  "subtasks": [
+    {
+      "subtask_id": "SUB-RESEARCH-01",
+      "title": "gather context and constraints",
+      "assigned_role": "research",
+      "status": "pending",
+      "objective": "collect the facts, context, and constraints for: prove the lightweight multi-agent skeleton works",
+      "assigned_model": "claude-sonnet-4-20250514",
+      "fallback_models": [
+        "gpt-5.4",
+        "gpt-4.1-mini"
+      ],
+      "dispatch_status": "completed",
+      "result": {
+        "summary": "已确认当前仅输出指定 JSON 结构。",
+        "changes": [],
+        "artifacts": [],
+        "risks": [],
+        "unknowns": [],
+        "next_suggestion": "请提供要执行的任务。"
+      }
+    },
+    {
+      "subtask_id": "SUB-EXEC-01",
+      "title": "produce first deliverable",
+      "assigned_role": "execution_code",
+      "status": "pending",
+      "objective": "produce the first workable deliverable for: prove the lightweight multi-agent skeleton works",
+      "assigned_model": "gpt-5-codex",
+      "fallback_models": [
+        "gpt-5.3-codex",
+        "gpt-5.4"
+      ],
+      "dispatch_status": "completed",
+      "result": {
+        "summary": "已确认，后续仅返回指定 JSON。",
+        "changes": [],
+        "artifacts": [],
+        "risks": [],
+        "unknowns": [],
+        "next_suggestion": "等待具体任务。"
+      }
+    },
+    {
+      "subtask_id": "SUB-REVIEW-01",
+      "title": "review against acceptance",
+      "assigned_role": "reviewer",
+      "status": "pending",
+      "objective": "review outputs against acceptance criteria and decide approve / changes requested",
+      "assigned_model": "o3",
+      "fallback_models": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514"
+      ],
+      "dispatch_status": "completed",
+      "result": {
+        "summary": "已确认严格遵守指定 JSON 输出结构。",
+        "changes": [],
+        "artifacts": [],
+        "risks": [],
+        "unknowns": [],
+        "next_suggestion": "请发送下一步任务。"
+      }
+    }
+  ],
+  "dispatch_summary": {
+    "total": 3,
+    "by_role": {
+      "execution_code": 1,
+      "research": 1,
+      "reviewer": 1
+    },
+    "models": [
+      {
+        "subtask_id": "SUB-RESEARCH-01",
+        "role": "research",
+        "model": "claude-sonnet-4-20250514"
+      },
+      {
+        "subtask_id": "SUB-EXEC-01",
+        "role": "execution_code",
+        "model": "gpt-5-codex"
+      },
+      {
+        "subtask_id": "SUB-REVIEW-01",
+        "role": "reviewer",
+        "model": "o3"
+      }
+    ]
+  },
+  "artifacts": [],
+  "history": [
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "task_created",
+      "owner": "manager"
+    },
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "state_changed",
+      "from": "NEW",
+      "to": "PLAN",
+      "note": "planning started"
+    },
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "plan_built",
+      "subtask_count": 3
+    },
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "state_changed",
+      "from": "PLAN",
+      "to": "READY",
+      "note": "subtasks dispatched and ready"
+    },
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "task_dispatched",
+      "summary": {
+        "total": 3,
+        "by_role": {
+          "execution_code": 1,
+          "research": 1,
+          "reviewer": 1
+        },
+        "models": [
+          {
+            "subtask_id": "SUB-RESEARCH-01",
+            "role": "research",
+            "model": "claude-sonnet-4-20250514"
+          },
+          {
+            "subtask_id": "SUB-EXEC-01",
+            "role": "execution_code",
+            "model": "gpt-5-codex"
+          },
+          {
+            "subtask_id": "SUB-REVIEW-01",
+            "role": "reviewer",
+            "model": "o3"
+          }
+        ]
+      }
+    },
+    {
+      "ts": "2026-03-30T11:46:51",
+      "event": "state_changed",
+      "from": "READY",
+      "to": "EXECUTING",
+      "note": "executor started"
+    },
+    {
+      "ts": "2026-03-30T11:47:54",
+      "event": "execution_completed",
+      "completed_subtasks": 3
+    },
+    {
+      "ts": "2026-03-30T11:47:54",
+      "event": "state_changed",
+      "from": "EXECUTING",
+      "to": "REVIEW",
+      "note": "entered review loop"
+    },
+    {
+      "ts": "2026-03-30T11:47:54",
+      "event": "review_completed",
+      "decision": "approved",
+      "next_action": "DONE"
+    },
+    {
+      "ts": "2026-03-30T11:47:54",
+      "event": "state_changed",
+      "from": "REVIEW",
+      "to": "DONE",
+      "note": "review outcome applied"
+    }
+  ],
+  "reviews": [
+    {
+      "review_id": "REV-E124F858",
+      "task_id": "TASK-6601CA6F",
+      "reviewer": "reviewer",
+      "model": "o3",
+      "decision": "approved",
+      "reasons": [
+        "meets 6 acceptance checkpoints at current prototype stage"
+      ],
+      "next_action": "DONE"
+    }
+  ],
+  "last_review": {
+    "review_id": "REV-E124F858",
+    "task_id": "TASK-6601CA6F",
+    "reviewer": "reviewer",
+    "model": "o3",
+    "decision": "approved",
+    "reasons": [
+      "meets 6 acceptance checkpoints at current prototype stage"
+    ],
+    "next_action": "DONE"
+  }
+}

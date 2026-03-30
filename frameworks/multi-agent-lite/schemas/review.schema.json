@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Review",
+  "type": "object",
+  "required": ["review_id", "task_id", "reviewer", "model", "decision", "reasons", "next_action"],
+  "properties": {
+    "review_id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "reviewer": { "type": "string" },
+    "model": { "type": "string" },
+    "decision": { "type": "string", "enum": ["approved", "changes_requested", "rejected"] },
+    "reasons": { "type": "array", "items": { "type": "string" } },
+    "next_action": { "type": "string" }
+  },
+  "additionalProperties": true
+}

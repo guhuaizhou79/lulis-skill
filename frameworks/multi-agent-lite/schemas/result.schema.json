@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Result",
+  "type": "object",
+  "required": ["summary", "changes", "artifacts", "risks", "unknowns", "next_suggestion"],
+  "properties": {
+    "summary": { "type": "string" },
+    "changes": { "type": "array", "items": { "type": "string" } },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "unknowns": { "type": "array", "items": { "type": "string" } },
+    "next_suggestion": { "type": "string" }
+  },
+  "additionalProperties": true
+}
