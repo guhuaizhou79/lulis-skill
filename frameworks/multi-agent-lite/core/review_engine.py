@@ -13,6 +13,7 @@ class ReviewEngine:
         subtasks: List[Dict[str, Any]] = task.get("subtasks", [])
         task_type = task.get("task_type", "general")
         expectations = get_task_expectations(task_type)
+        expected_output_shape = expectations.get("output_shape", "general_deliverable")
 
         issues: List[str] = []
         quality_signals: List[str] = []
@@ -91,6 +92,12 @@ class ReviewEngine:
             quality_signals.append(f"task exposes {len(task_level_deliverables)} task-level deliverable(s)")
         else:
             blocking_gaps.append("missing task-level deliverables")
+
+        if expected_output_shape in {"choice_then_reason", "path_or_identifier", "direct_answer"} and not delivery_summary:
+            blocking_gaps.append(f"missing direct answer form for output_shape={expected_output_shape}")
+
+        if expected_output_shape in {"config_first", "code_or_config"} and not (task_level_deliverables or delivery_changes):
+            blocking_gaps.append(f"missing structured config/code deliverable for output_shape={expected_output_shape}")
 
         acceptance_results.append({
             "item": f"address original goal: {goal}",

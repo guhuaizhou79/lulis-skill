@@ -57,6 +57,7 @@ def build_plan(task: Dict[str, Any]) -> List[Dict[str, Any]]:
     profile = select_planning_profile(task)
     profile_cfg = _profile_config(profile)
     expectations = get_task_expectations(task_type)
+    output_shape = expectations.get("output_shape", "general_deliverable")
 
     execution_role = expectations["expected_execution_role"]
     subtasks: List[Dict[str, Any]] = []
@@ -87,6 +88,7 @@ def build_plan(task: Dict[str, Any]) -> List[Dict[str, Any]]:
             f" | acceptance={acceptance or []}"
             f" | constraints={constraints or []}"
         )
+    execution_objective += f" | output_shape={output_shape}"
 
     subtasks.append(
         {

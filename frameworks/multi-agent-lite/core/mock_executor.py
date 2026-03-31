@@ -41,10 +41,18 @@ class MockExecutor:
                 "next_suggestion": f"handoff to next role with objective: {objective}",
             }
         if role in {"execution_code", "execution_general"}:
+            task_type = str(task.get("task_type") or "general")
             artifacts: list[str] = []
             changes = ["built first-pass output"]
             summary = f"produced draft deliverable for: {task.get('title')}"
-            if wants_real_deliverable:
+
+            if task_type == "choice_answering":
+                summary = "B — choose the correct option first, then explain the reason"
+                changes = ["answered with explicit option", "appended supporting reason"]
+            elif task_type == "path_lookup":
+                summary = "src/services/analytics/sessionTracker.ts :: aggregateSessionMetrics"
+                changes = ["returned exact path", "returned exact identifier"]
+            elif wants_real_deliverable:
                 artifact_rel = f"artifacts/{task.get('task_id', 'task').lower()}-deliverable.md"
                 artifacts = [artifact_rel]
                 changes.append("materialized task-level deliverable artifact")

@@ -52,6 +52,30 @@ if __name__ == "__main__":
             "inject_failure": "semantic_error",
             "expect_status": "PLAN",
             "expect_decision": "changes_requested"
+        },
+        {
+            "name": "choice-answering-shape",
+            "title": "choice answering task",
+            "goal": "answer the multiple-choice question directly, then explain",
+            "task_type": "choice_answering",
+            "acceptance": [
+                "explicit option is given first",
+                "reason follows the option"
+            ],
+            "expect_status": "DONE",
+            "expect_decision": "approved"
+        },
+        {
+            "name": "path-lookup-shape",
+            "title": "path lookup task",
+            "goal": "return the exact file path and identifier",
+            "task_type": "path_lookup",
+            "acceptance": [
+                "exact path is returned",
+                "exact identifier is returned"
+            ],
+            "expect_status": "DONE",
+            "expect_decision": "approved"
         }
     ]
 

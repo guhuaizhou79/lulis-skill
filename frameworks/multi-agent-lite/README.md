@@ -57,7 +57,7 @@ Quick checks:
 - `python3 frameworks/multi-agent-lite/main.py`
 - `python3 frameworks/multi-agent-lite/validate_delivery.py`
 
-`validate_delivery.py` is the more useful prototype check because it exercises a baseline scenario, a deliverable-required scenario with real artifact file materialization, and a failure-path send-back scenario that also checks for artifact cleanup.
+`validate_delivery.py` is the more useful prototype check because it exercises baseline delivery, deliverable-required materialization, failure-path send-back, and output-shape scenarios such as choice answering and path lookup.
 
 ## Notes
 

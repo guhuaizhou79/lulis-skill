@@ -52,6 +52,7 @@ If those conditions are not met, send the task back instead of declaring success
 - Be explicit when choosing **not** to use multi-agent mode.
 - If runtime or executor quality is degraded, say so plainly and downgrade the promise.
 - Prefer frameworks/multi-agent-lite's local materializing mock path over pretending external multi-agent runtime is available when ACP / executor backends are down.
+- Identify task shape early. For fact lookup / path lookup / choice answering / config authoring, prefer the required answer form first, then explanation — do not replace the requested output with generic methodology.
 
 ## Read only when needed
 
