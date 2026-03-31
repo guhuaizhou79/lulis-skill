@@ -32,14 +32,15 @@ class Orchestrator:
         self.executor = self._build_executor()
 
     def _build_executor(self):
+        mock = MockExecutor(self.root)
         cfg_path = self.root / "configs" / "executor.json"
         if not cfg_path.exists():
-            return MockExecutor()
+            return mock
 
         try:
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
         except Exception:
-            return MockExecutor()
+            return mock
 
         mode = cfg.get("mode", "mock")
         if mode == "openclaw":
@@ -50,8 +51,8 @@ class Orchestrator:
                     timeout=int(oc.get("timeout", 180)),
                 )
             except FileNotFoundError:
-                return MockExecutor()
-        return MockExecutor()
+                return mock
+        return mock
 
     def create_task(
         self,
@@ -192,4 +193,6 @@ class Orchestrator:
             "note": "review outcome applied",
         })
         self.store.save(task)
+        return task
+
         return task

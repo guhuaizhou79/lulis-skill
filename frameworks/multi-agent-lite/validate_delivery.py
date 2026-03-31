@@ -67,6 +67,8 @@ if __name__ == "__main__":
         orch.dispatch_task(task["task_id"])
         orch.execute_task(task["task_id"])
         task = orch.store.load(task["task_id"])
+        materialized_paths = [root / path for path in task.get("deliverables", []) if str(path).startswith("artifacts/")]
+        preexisting_paths = [path for path in materialized_paths if path.exists()]
 
         if scenario.get("inject_failure") == "semantic_error":
             for st in task.get("subtasks", []):
@@ -89,6 +91,10 @@ if __name__ == "__main__":
         task = orch.review_task(task["task_id"])
         decision = (task.get("last_review") or {}).get("decision")
         status = task.get("status")
+        artifact_files = [root / path for path in task.get("deliverables", []) if str(path).startswith("artifacts/")]
+        artifact_exists = [path.exists() for path in artifact_files]
+        no_artifact_residue = all(not path.exists() for path in materialized_paths) if scenario.get("inject_failure") else None
+
         results.append({
             "scenario": scenario["name"],
             "task_id": task["task_id"],
@@ -96,6 +102,8 @@ if __name__ == "__main__":
             "expected_status": scenario.get("expect_status"),
             "deliverables": task.get("deliverables", []),
             "delivery_status": task.get("delivery_status"),
+            "artifact_files": [str(path) for path in artifact_files],
+            "artifact_exists": artifact_exists,
             "acceptance_results": (task.get("last_review") or {}).get("acceptance_results", []),
             "decision": decision,
             "expected_decision": scenario.get("expect_decision"),

@@ -28,6 +28,8 @@ Treat this as `v0.1`:
 ## Recommended interpretation
 
 Use this framework as a disciplined internal multi-model production chain.
+Its strongest current value is a runtime-first staged workflow that can degrade to a local materializing mock path when the external executor is unavailable.
+
 Its strongest value is staged quality control:
 - planning,
 - research,
@@ -55,7 +57,7 @@ Quick checks:
 - `python3 frameworks/multi-agent-lite/main.py`
 - `python3 frameworks/multi-agent-lite/validate_delivery.py`
 
-`validate_delivery.py` is the more useful prototype check because it exercises a baseline scenario, a deliverable-required scenario, and a failure-path send-back scenario.
+`validate_delivery.py` is the more useful prototype check because it exercises a baseline scenario, a deliverable-required scenario with real artifact file materialization, and a failure-path send-back scenario that also checks for artifact cleanup.
 
 ## Notes
 
