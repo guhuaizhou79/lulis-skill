@@ -6,6 +6,7 @@ from typing import Any, Dict
 from uuid import uuid4
 import json
 
+from .delivery_synthesizer import synthesize_delivery
 from .dispatcher import Dispatcher
 from .execution_runner import execute_subtasks
 from .mock_executor import MockExecutor
@@ -152,22 +153,7 @@ class Orchestrator:
                 "note": "executor started",
             })
         task = execute_subtasks(task, self.executor)
-
-        deliverables = list(task.get("artifacts", []))
-        exec_summaries = []
-        for st in task.get("subtasks", []):
-            if st.get("assigned_role") in {"execution_code", "execution_general"}:
-                result = st.get("result") or {}
-                summary = str(result.get("summary") or "").strip()
-                if summary:
-                    exec_summaries.append(summary)
-                for artifact in result.get("artifacts") or []:
-                    if artifact not in deliverables:
-                        deliverables.append(artifact)
-
-        task["deliverables"] = deliverables
-        task["delivery_summary"] = " | ".join(exec_summaries[:3])
-        task["delivery_status"] = "assembled" if (task["deliverables"] or task["delivery_summary"]) else "not_delivered"
+        task = synthesize_delivery(task)
 
         self.store.append_history(task, {
             "event": "execution_completed",

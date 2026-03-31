@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from uuid import uuid4
 
+from .acceptance_mapping import build_acceptance_evidence
 from .task_expectations import get_task_expectations
 
 
@@ -24,6 +25,9 @@ class ReviewEngine:
 
         task_level_deliverables = task.get("deliverables") or []
         delivery_summary = str(task.get("delivery_summary") or "").strip()
+        delivery_changes = task.get("delivery_changes") or []
+        delivery_evidence = task.get("delivery_evidence") or []
+        task_level_risks = task.get("delivery_risks") or []
 
         for st in subtasks:
             if not st.get("assigned_model"):
@@ -96,13 +100,7 @@ class ReviewEngine:
 
         if acceptance:
             for item in acceptance:
-                status = "pass" if delivery_summary else "unknown"
-                evidence = delivery_summary or "no task-level evidence collected"
-                acceptance_results.append({
-                    "item": item,
-                    "status": status,
-                    "evidence": evidence,
-                })
+                acceptance_results.append(build_acceptance_evidence(item, task))
             quality_signals.append(f"task defines {len(acceptance)} acceptance checkpoints")
         else:
             quality_signals.append("task has no explicit acceptance checkpoints")

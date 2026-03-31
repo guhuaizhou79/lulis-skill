@@ -31,6 +31,7 @@ The main chain already has real prototype value, but the executor contract and r
 - OpenClaw executor integration exists
 - planning / dispatch / execution / review are connected
 - reviewer is starting to check delivery quality, not only process state
+- task-level synthesis now exists as a distinct step before review
 
 ## What is still weak
 

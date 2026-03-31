@@ -22,6 +22,7 @@ Treat this as `v0.1`:
 - executor robustness has improved with output decoding, JSON extraction tolerance, and fallback handling,
 - planning now follows explicit profile selection instead of a single fixed path,
 - reviewer now checks task-level delivery signals instead of only process completion,
+- task-level synthesis now aggregates delivery changes, evidence, and deliverable candidates before review,
 - there is still a gap between a usable internal pipeline and a fully production-hardened autonomous platform.
 
 ## Recommended interpretation
@@ -46,6 +47,15 @@ This is still intentionally simple, but it is a better direction than forcing th
 
 Do not confuse the orchestration layer with business truth.
 Business rules, mappings, templates, and project-specific validation should remain separate.
+
+## Validation
+
+Quick checks:
+- `python3 -m compileall frameworks/multi-agent-lite`
+- `python3 frameworks/multi-agent-lite/main.py`
+- `python3 frameworks/multi-agent-lite/validate_delivery.py`
+
+`validate_delivery.py` is the more useful prototype check because it exercises a baseline scenario, a deliverable-required scenario, and a failure-path send-back scenario.
 
 ## Notes
 

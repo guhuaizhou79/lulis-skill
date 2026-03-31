@@ -38,6 +38,7 @@
       }
     },
     "delivery_status": { "type": "string" },
+    "quality_signals": { "type": "array", "items": { "type": "string" } },
     "blocking_gaps": { "type": "array", "items": { "type": "string" } },
     "residual_risks": { "type": "array", "items": { "type": "string" } },
     "recommended_sendback_target": { "type": "string" }

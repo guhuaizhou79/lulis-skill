@@ -24,7 +24,19 @@
     "transport_error": { "type": "boolean" },
     "protocol_error": { "type": "boolean" },
     "semantic_error": { "type": "boolean" },
-    "raw_excerpt": { "type": "string" }
+    "raw_excerpt": { "type": "string" },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "value"],
+        "properties": {
+          "kind": { "type": "string" },
+          "value": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
   },
   "additionalProperties": true
 }
