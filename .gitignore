@@ -1,3 +1,7 @@
+# Python cache
 __pycache__/
 *.py[cod]
-runtime/tasks/*.json
+
+# multi-agent-lite runtime/generated outputs
+frameworks/multi-agent-lite/artifacts/*.md
+frameworks/multi-agent-lite/runtime/tasks/*.json

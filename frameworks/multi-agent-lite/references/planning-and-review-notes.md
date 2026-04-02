@@ -37,3 +37,11 @@ The framework should prefer task-level evidence:
 - explicit residual risks
 
 If those are missing, prefer send-back over optimistic completion.
+
+## Reference split
+
+Use this file for planning / review SSOT only.
+
+- execution role discipline lives in `execution-loop-rules.md`
+- result-envelope field semantics live in `executor-contract.md`
+- runtime vs validation vs mock boundary rules live in `runtime-validate-mock-boundaries.md`

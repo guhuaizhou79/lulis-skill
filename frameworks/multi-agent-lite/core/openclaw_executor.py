@@ -42,6 +42,11 @@ class OpenClawExecutor:
         protocol_error: bool = False,
         semantic_error: bool = False,
         raw_excerpt: str = "",
+        objective_echo: str = "",
+        acceptance_checks: list[Dict[str, Any]] | None = None,
+        assumptions: list[str] | None = None,
+        needs_input: list[str] | None = None,
+        completion_basis: list[str] | None = None,
     ) -> Dict[str, Any]:
         return {
             "summary": summary,
@@ -54,6 +59,11 @@ class OpenClawExecutor:
             "protocol_error": protocol_error,
             "semantic_error": semantic_error,
             "raw_excerpt": raw_excerpt,
+            "objective_echo": objective_echo,
+            "acceptance_checks": acceptance_checks or [],
+            "assumptions": assumptions or [],
+            "needs_input": needs_input or [],
+            "completion_basis": completion_basis or [],
         }
 
     def _normalize_result(self, parsed: Dict[str, Any], raw_excerpt: str) -> Dict[str, Any]:
@@ -68,6 +78,11 @@ class OpenClawExecutor:
             protocol_error=bool(parsed.get("protocol_error", False)),
             semantic_error=bool(parsed.get("semantic_error", False)),
             raw_excerpt=raw_excerpt,
+            objective_echo=str(parsed.get("objective_echo", "")).strip(),
+            acceptance_checks=list(parsed.get("acceptance_checks") or []),
+            assumptions=list(parsed.get("assumptions") or []),
+            needs_input=list(parsed.get("needs_input") or []),
+            completion_basis=list(parsed.get("completion_basis") or []),
         )
 
         meaningful = any([
@@ -96,9 +111,15 @@ class OpenClawExecutor:
         }
         return (
             "你是多agent框架中的一个执行角色。"
+            "先准确理解目标、验收项、约束和输出形态，再执行。"
+            "优先返回可审查的交付信号，不要用空泛过程描述冒充完成。"
+            "如果无法形成真实交付，请明确写入 unknowns、needs_input、risks，并给出 next_suggestion。"
             "严格只输出 JSON，不要 markdown，不要解释。"
-            "JSON 结构必须为: "
+            "JSON 至少包含: "
             '{"summary":"...","changes":["..."],"artifacts":["..."],"risks":["..."],"unknowns":["..."],"next_suggestion":"...","transport_error":false,"protocol_error":false,"semantic_error":false,"raw_excerpt":"..."}'
+            "。推荐额外包含: "
+            '{"objective_echo":"...","acceptance_checks":[{"item":"...","status":"pass|partial|fail|unknown","evidence":"..."}],"assumptions":["..."],"needs_input":["..."],"completion_basis":["..."]}'
+            "。raw_excerpt 保持短，不要塞长篇过程。"
             f"\n输入任务: {json.dumps(payload, ensure_ascii=False)}"
         )
 

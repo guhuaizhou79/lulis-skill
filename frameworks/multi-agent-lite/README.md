@@ -1,54 +1,59 @@
 # multi-agent-lite
 
-A lightweight multi-agent collaboration framework for OpenClaw.
+A lightweight staged orchestration framework for OpenClaw.
 
 ## What it is
 
-A staged orchestration path built around:
+A four-role collaboration path built around:
 - manager
 - research
 - execution
 - reviewer
 
-## Current flow
+Core flow:
 
 `create task -> plan -> dispatch -> execute -> review -> done / send back`
 
-## Current maturity
+## Current stable value
 
-Treat this as `v0.1`:
-- main chain works,
-- OpenClaw executor is connected,
-- executor robustness has improved with output decoding, JSON extraction tolerance, and fallback handling,
-- planning now follows explicit profile selection instead of a single fixed path,
-- reviewer now checks task-level delivery signals instead of only process completion,
-- task-level synthesis now aggregates delivery changes, evidence, and deliverable candidates before review,
-- there is still a gap between a usable internal pipeline and a fully production-hardened autonomous platform.
+Treat this as `v0.1` with real prototype value.
 
-## Recommended interpretation
+What is already materially working:
+- staged planning / dispatch / execution / review
+- OpenClaw executor integration
+- planning-profile selection instead of one fixed plan shape
+- task-type-aware expectations
+- task-level delivery synthesis before review
+- reviewer checks that lean on delivery signals, not only process completion
+- local materializing mock fallback when external executor is unavailable
 
-Use this framework as a disciplined internal multi-model production chain.
-Its strongest current value is a runtime-first staged workflow that can degrade to a local materializing mock path when the external executor is unavailable.
+## Current stronger execution/review layer
 
-Its strongest value is staged quality control:
-- planning,
-- research,
-- execution,
-- review.
+The framework now also supports a stronger worker-to-reviewer contract:
+- execution roles are expected to follow a worker-level loop (`understand -> act -> observe -> report -> stop/escalate`)
+- executor output can carry structured acceptance checks
+- executor output can state completion basis explicitly
+- executor output can declare `needs_input` instead of hiding blockers
+- review can downgrade optimistic acceptance detail when upstream execution has already failed
 
-The framework now distinguishes lightweight planning profiles:
-- `direct_review`
-- `research_execute_review`
-- `research_execute_review_strict`
+This is the main current direction of improvement: better delivery-quality control without replacing the core orchestrator.
 
-These profiles are selected from task type, priority, acceptance items, and constraints, so plan shape is now more explicit and closer to SSOT.
+## Boundaries
 
-The framework also now encodes simple task-type expectations and stronger reviewer checks, so it is moving from pure process control toward basic delivery-quality control.
+This framework is for orchestration discipline, not business truth.
+Keep business rules, project mappings, templates, and domain validation outside the orchestration layer.
 
-This is still intentionally simple, but it is a better direction than forcing the same plan shape for every task.
+It is still not a production-hardened autonomous platform.
+Executor quality, schema maturity, and runtime behavior still need continued tightening.
 
-Do not confuse the orchestration layer with business truth.
-Business rules, mappings, templates, and project-specific validation should remain separate.
+## Runtime vs validation vs mock
+
+- **runtime path**: the actual staged orchestration and executor-backed flow
+- **validation path**: `validate_delivery.py` and related scenario checks used to verify behavior
+- **mock path**: local fallback / materializing behavior used when a real executor is unavailable
+
+These layers should stay aligned, but they are not the same thing.
+Do not let mock-specific convenience logic silently redefine runtime truth.
 
 ## Validation
 
@@ -57,10 +62,14 @@ Quick checks:
 - `python3 frameworks/multi-agent-lite/main.py`
 - `python3 frameworks/multi-agent-lite/validate_delivery.py`
 
-`validate_delivery.py` is the more useful prototype check because it exercises baseline delivery, deliverable-required materialization, failure-path send-back, and output-shape scenarios such as choice answering and path lookup.
+`validate_delivery.py` is the more useful prototype check because it exercises:
+- baseline delivery
+- deliverable-required materialization
+- failure-path send-back
+- output-shape scenarios such as choice answering and path lookup
 
 ## Notes
 
 This folder holds the framework implementation.
 The triggerable skill lives in `../../skills/multi-agent-lite/`.
-For project-facing operating guidance, also see `../../skills/multi-agent-lite/references/project-usage-guide.md`, `../../docs/MULTI-MODEL-ADOPTION.md`, `../../docs/OPTIMIZATION-NOTES-2026-03-30.md`, and `../../docs/NEXT-IMPLEMENTATION-CUTS.md`.
+Project-facing usage guidance belongs in the skill references, not in this README.

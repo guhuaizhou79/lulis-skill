@@ -20,6 +20,9 @@ class ReviewEngine:
         blocking_gaps: List[str] = []
         residual_risks: List[str] = []
         acceptance_results: List[Dict[str, str]] = []
+        completion_signals: List[str] = []
+        executor_acceptance_checks: List[Dict[str, Any]] = []
+        needs_input_signals: List[str] = []
 
         if not subtasks:
             blocking_gaps.append("no subtasks available")
@@ -29,6 +32,7 @@ class ReviewEngine:
         delivery_changes = task.get("delivery_changes") or []
         delivery_evidence = task.get("delivery_evidence") or []
         task_level_risks = task.get("delivery_risks") or []
+        has_primary_failure = False
 
         for st in subtasks:
             if not st.get("assigned_model"):
@@ -43,18 +47,38 @@ class ReviewEngine:
                 continue
 
             if result.get("transport_error"):
+                has_primary_failure = True
                 blocking_gaps.append(f"subtask {st.get('subtask_id')} transport_error")
             if result.get("protocol_error"):
+                has_primary_failure = True
                 blocking_gaps.append(f"subtask {st.get('subtask_id')} protocol_error")
             if result.get("semantic_error"):
+                has_primary_failure = True
                 blocking_gaps.append(f"subtask {st.get('subtask_id')} semantic_error")
 
             changes = result.get("changes") or []
             artifacts = result.get("artifacts") or []
             risks = result.get("risks") or []
             summary = str(result.get("summary") or "").strip()
+            objective_echo = str(result.get("objective_echo") or "").strip()
+            acceptance_checks = result.get("acceptance_checks") or []
+            needs_input = result.get("needs_input") or []
+            completion_basis = result.get("completion_basis") or []
 
             if st.get("assigned_role") in {"execution_code", "execution_general"}:
+                if objective_echo:
+                    quality_signals.append(f"subtask {st.get('subtask_id')} echoed objective")
+                if acceptance_checks:
+                    executor_acceptance_checks.extend([
+                        chk for chk in acceptance_checks if isinstance(chk, dict)
+                    ])
+                    quality_signals.append(f"subtask {st.get('subtask_id')} returned acceptance checks")
+                if completion_basis:
+                    completion_signals.extend([str(x) for x in completion_basis if str(x).strip()])
+                if needs_input:
+                    has_primary_failure = True
+                    needs_input_signals.extend([str(x) for x in needs_input if str(x).strip()])
+
                 if expectations.get("requires_meaningful_changes") and not changes:
                     blocking_gaps.append(f"subtask {st.get('subtask_id')} missing meaningful changes")
                 if expectations.get("artifacts_preferred") and not changes and not artifacts:
@@ -93,6 +117,34 @@ class ReviewEngine:
         else:
             blocking_gaps.append("missing task-level deliverables")
 
+        if completion_signals:
+            deduped_completion = []
+            seen_completion = set()
+            for item in completion_signals:
+                normalized = item.strip()
+                if not normalized or normalized in seen_completion:
+                    continue
+                seen_completion.add(normalized)
+                deduped_completion.append(normalized)
+            if deduped_completion:
+                quality_signals.append(
+                    "executor completion basis: " + "; ".join(deduped_completion[:3])
+                )
+
+        if needs_input_signals:
+            deduped_needs = []
+            seen_needs = set()
+            for item in needs_input_signals:
+                normalized = item.strip()
+                if not normalized or normalized in seen_needs:
+                    continue
+                seen_needs.add(normalized)
+                deduped_needs.append(normalized)
+            if deduped_needs:
+                blocking_gaps.append(
+                    "executor still needs input: " + "; ".join(deduped_needs[:3])
+                )
+
         if expected_output_shape in {"choice_then_reason", "path_or_identifier", "direct_answer"} and not delivery_summary:
             blocking_gaps.append(f"missing direct answer form for output_shape={expected_output_shape}")
 
@@ -107,7 +159,14 @@ class ReviewEngine:
 
         if acceptance:
             for item in acceptance:
-                acceptance_results.append(build_acceptance_evidence(item, task))
+                acceptance_results.append(
+                    build_acceptance_evidence(
+                        item,
+                        task,
+                        executor_acceptance_checks,
+                        failure_override=has_primary_failure,
+                    )
+                )
             quality_signals.append(f"task defines {len(acceptance)} acceptance checkpoints")
         else:
             quality_signals.append("task has no explicit acceptance checkpoints")

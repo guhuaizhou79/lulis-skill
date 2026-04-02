@@ -39,6 +39,11 @@ class MockExecutor:
                 "risks": [],
                 "unknowns": [],
                 "next_suggestion": f"handoff to next role with objective: {objective}",
+                "objective_echo": objective,
+                "acceptance_checks": [],
+                "assumptions": [],
+                "needs_input": [],
+                "completion_basis": ["context and constraints summarized"],
             }
         if role in {"execution_code", "execution_general"}:
             task_type = str(task.get("task_type") or "general")
@@ -58,6 +63,21 @@ class MockExecutor:
                 changes.append("materialized task-level deliverable artifact")
                 summary = f"produced delivery-ready artifact for: {task.get('title')}"
                 self._write_artifact(artifact_rel, task, summary, changes)
+            acceptance_checks = [
+                {
+                    "item": item,
+                    "status": "pass" if (artifacts or changes or summary) else "unknown",
+                    "evidence": summary,
+                }
+                for item in acceptance
+            ]
+            completion_basis = []
+            if artifacts:
+                completion_basis.append("artifact produced")
+            if changes:
+                completion_basis.append("meaningful changes produced")
+            if task_type in {"choice_answering", "path_lookup"}:
+                completion_basis.append("direct answer returned")
             return {
                 "summary": summary,
                 "changes": changes,
@@ -65,6 +85,11 @@ class MockExecutor:
                 "risks": ["still mock execution"],
                 "unknowns": [],
                 "next_suggestion": "send to reviewer",
+                "objective_echo": objective,
+                "acceptance_checks": acceptance_checks,
+                "assumptions": ["using mock executor behavior"],
+                "needs_input": [],
+                "completion_basis": completion_basis,
             }
         if role == "reviewer":
             return {
@@ -74,6 +99,11 @@ class MockExecutor:
                 "risks": [],
                 "unknowns": [],
                 "next_suggestion": "apply review decision",
+                "objective_echo": objective,
+                "acceptance_checks": [],
+                "assumptions": [],
+                "needs_input": [],
+                "completion_basis": ["review pre-check completed"],
             }
         return {
             "summary": f"no-op executor result for role {role}",
@@ -82,4 +112,9 @@ class MockExecutor:
             "risks": [],
             "unknowns": ["unknown role"],
             "next_suggestion": "inspect routing",
+            "objective_echo": objective,
+            "acceptance_checks": [],
+            "assumptions": [],
+            "needs_input": ["valid mapped role"],
+            "completion_basis": [],
         }

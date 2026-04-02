@@ -12,7 +12,12 @@ def _norm(value: str) -> List[str]:
     return tokens
 
 
-def build_acceptance_evidence(item: str, task: Dict[str, Any]) -> Dict[str, Any]:
+def build_acceptance_evidence(
+    item: str,
+    task: Dict[str, Any],
+    executor_acceptance_checks: List[Dict[str, Any]] | None = None,
+    failure_override: bool = False,
+) -> Dict[str, Any]:
     item_tokens = set(_norm(item))
     evidence_hits: List[str] = []
 
@@ -40,13 +45,49 @@ def build_acceptance_evidence(item: str, task: Dict[str, Any]) -> Dict[str, Any]
         if item_tokens and item_tokens.intersection(candidate_tokens):
             evidence_hits.append(candidate)
 
+    matched_executor_checks: List[Dict[str, Any]] = []
+    for check in executor_acceptance_checks or []:
+        check_item = str(check.get("item") or "").strip()
+        if not check_item:
+            continue
+        check_tokens = set(_norm(check_item))
+        if item_tokens and item_tokens.intersection(check_tokens):
+            matched_executor_checks.append(check)
+
+    if matched_executor_checks:
+        for check in matched_executor_checks:
+            evidence = str(check.get("evidence") or "").strip()
+            status = str(check.get("status") or "unknown").strip() or "unknown"
+            label = f"executor_check[{status}]"
+            if evidence:
+                evidence_hits.append(f"{label}: {evidence}")
+            else:
+                evidence_hits.append(label)
+
     if not evidence_hits and deduped_candidates:
         evidence_hits = deduped_candidates[:2]
 
-    status = "pass" if evidence_hits else "unknown"
+    derived_status = "pass" if evidence_hits else "unknown"
+    if matched_executor_checks:
+        statuses = [str(check.get("status") or "unknown").strip() or "unknown" for check in matched_executor_checks]
+        if any(status == "fail" for status in statuses):
+            derived_status = "fail"
+        elif any(status == "partial" for status in statuses):
+            derived_status = "partial"
+        elif any(status == "pass" for status in statuses):
+            derived_status = "pass"
+        else:
+            derived_status = "unknown"
+
     evidence_text = "; ".join(evidence_hits[:3]) if evidence_hits else "no task-level evidence collected"
+    if failure_override and derived_status == "pass":
+        derived_status = "partial"
+        if evidence_text != "no task-level evidence collected":
+            evidence_text = f"failure_override: upstream execution not yet reliable | {evidence_text}"
+        else:
+            evidence_text = "failure_override: upstream execution not yet reliable"
     return {
         "item": item,
-        "status": status,
+        "status": derived_status,
         "evidence": evidence_text,
     }

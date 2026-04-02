@@ -19,26 +19,27 @@ It currently supports:
 - execution
 - reviewer
 
-## Current maturity
+## Stable-enough working layer
 
-Treat it as `v0.1`.
+Treat it as `v0.1` with real prototype value.
 
-The main chain already has real prototype value, but the executor contract and real runtime stability still have tail risk. This should be described as an internal or controlled-trial framework, not as a mature production platform.
-
-## What is working
-
+What is already working well enough to keep building on:
 - end-to-end staged flow exists
-- OpenClaw executor integration exists
 - planning / dispatch / execution / review are connected
-- reviewer is starting to check delivery quality, not only process state
-- task-level synthesis now exists as a distinct step before review
+- OpenClaw executor integration exists
+- task-level synthesis exists before review
+- reviewer is checking delivery quality, not only process state
+- stronger executor result semantics are now present
+- review can consume executor-side acceptance checks / completion basis / needs-input signals
+- failure-path review is less optimistic than the baseline version
 
-## What is still weak
+## Still weak / not yet fully converged
 
 - executor output remains dependent on prompt and transport quality
 - protocol failures and semantic failures still need stricter enforcement over time
 - plan shapes are still limited and not yet fully task-shape driven
-- some maturity / routing truths still need further SSOT cleanup across the repo
+- schema / docs / runtime usage are closer, but still not perfect SSOT
+- mock / validation support logic still needs careful boundary discipline
 
 ## Interpretation rules
 
@@ -46,3 +47,4 @@ The main chain already has real prototype value, but the executor contract and r
 - Do not force it onto simple work.
 - Do not treat orchestration as business truth.
 - If user-facing output depends on raw executor output, do one extra sanity pass.
+- Prefer explicit send-back over optimistic completion when delivery evidence is weak.
