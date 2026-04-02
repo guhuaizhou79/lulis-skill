@@ -23,6 +23,7 @@ class ReviewEngine:
         completion_signals: List[str] = []
         executor_acceptance_checks: List[Dict[str, Any]] = []
         needs_input_signals: List[str] = []
+        contract_quality_gaps: List[str] = []
 
         if not subtasks:
             blocking_gaps.append("no subtasks available")
@@ -65,7 +66,19 @@ class ReviewEngine:
             needs_input = result.get("needs_input") or []
             completion_basis = result.get("completion_basis") or []
 
+            missing_recommended_fields: List[str] = []
             if st.get("assigned_role") in {"execution_code", "execution_general"}:
+                if not objective_echo:
+                    missing_recommended_fields.append("objective_echo")
+                if not acceptance_checks:
+                    missing_recommended_fields.append("acceptance_checks")
+                if not completion_basis:
+                    missing_recommended_fields.append("completion_basis")
+                if missing_recommended_fields:
+                    contract_quality_gaps.append(
+                        f"subtask {st.get('subtask_id')} missing recommended executor fields: "
+                        + ", ".join(missing_recommended_fields)
+                    )
                 if objective_echo:
                     quality_signals.append(f"subtask {st.get('subtask_id')} echoed objective")
                 if acceptance_checks:
@@ -131,6 +144,20 @@ class ReviewEngine:
                     "executor completion basis: " + "; ".join(deduped_completion[:3])
                 )
 
+        if contract_quality_gaps:
+            deduped_contract_gaps = []
+            seen_contract_gaps = set()
+            for item in contract_quality_gaps:
+                normalized = item.strip()
+                if not normalized or normalized in seen_contract_gaps:
+                    continue
+                seen_contract_gaps.add(normalized)
+                deduped_contract_gaps.append(normalized)
+            if deduped_contract_gaps:
+                quality_signals.append(
+                    "contract quality gaps: " + " | ".join(deduped_contract_gaps[:3])
+                )
+
         if needs_input_signals:
             deduped_needs = []
             seen_needs = set()
@@ -172,6 +199,8 @@ class ReviewEngine:
             quality_signals.append("task has no explicit acceptance checkpoints")
 
         issues.extend(blocking_gaps)
+        if expectations.get("strict_review") and contract_quality_gaps and not issues:
+            issues.append("strict-review task lacks recommended executor contract fields")
         decision = "approved" if not issues else "changes_requested"
         next_action = "DONE" if decision == "approved" else "PLAN"
         delivery_status = "delivered" if delivery_summary and task_level_deliverables else "not_delivered"

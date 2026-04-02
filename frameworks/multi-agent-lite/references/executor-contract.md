@@ -90,3 +90,6 @@ Examples:
 - At most one of the three error booleans should normally be `true` for the primary failure cause.
 - `raw_excerpt` should contain a short trimmed diagnostic excerpt when available.
 - Review logic should consume these flags directly instead of inferring failure type from free text.
+- Fields listed as `recommended-now` should be treated as the preferred contract for executor implementations and prompts, even if they are not yet hard-required by schema validation.
+- In strict-review task types, repeated absence of `recommended-now` fields may justify send-back / `changes_requested` even without a transport/protocol/semantic hard failure.
+- Fields listed as `soft_optional` should not quietly become review-critical without an explicit contract/schema promotion.

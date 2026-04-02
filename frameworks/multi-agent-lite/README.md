@@ -55,6 +55,11 @@ Executor quality, schema maturity, and runtime behavior still need continued tig
 These layers should stay aligned, but they are not the same thing.
 Do not let mock-specific convenience logic silently redefine runtime truth.
 
+Practical interpretation:
+- if a rule changes review decisions for real work, treat it as runtime-sensitive
+- if a rule exists mainly to make deterministic local checks easier, keep it in validation/mock support
+- if uncertain, document the boundary explicitly before promoting the behavior
+
 ## Validation
 
 Quick checks:

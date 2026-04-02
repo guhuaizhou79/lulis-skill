@@ -48,3 +48,4 @@ What is already working well enough to keep building on:
 - Do not treat orchestration as business truth.
 - If user-facing output depends on raw executor output, do one extra sanity pass.
 - Prefer explicit send-back over optimistic completion when delivery evidence is weak.
+- Treat the framework as contract-first and boundary-sensitive: optimize SSOT, review quality, and delivery evidence before adding more orchestration surface area.

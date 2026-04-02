@@ -38,6 +38,13 @@ The framework should prefer task-level evidence:
 
 If those are missing, prefer send-back over optimistic completion.
 
+Also keep this distinction explicit:
+- acceptance evidence pass means the task appears materially addressed
+- executor contract quality pass means the execution result exposed enough structured review signals
+
+These are related but not identical.
+For strict-review task types, weak contract quality may still justify send-back even when acceptance evidence looks superficially positive.
+
 ## Reference split
 
 Use this file for planning / review SSOT only.

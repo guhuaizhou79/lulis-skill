@@ -76,6 +76,20 @@ if __name__ == "__main__":
             ],
             "expect_status": "DONE",
             "expect_decision": "approved"
+        },
+        {
+            "name": "strict-review-missing-recommended-contract",
+            "title": "strict review contract gap task",
+            "goal": "verify strict review downgrades execution when recommended contract fields are missing",
+            "task_type": "framework_design",
+            "acceptance": [
+                "execution result echoes the objective",
+                "execution result returns acceptance checks",
+                "execution result states completion basis"
+            ],
+            "mutate_execution_result": "drop_recommended_fields",
+            "expect_status": "PLAN",
+            "expect_decision": "changes_requested"
         }
     ]
 
@@ -111,6 +125,17 @@ if __name__ == "__main__":
             task["delivery_summary"] = ""
             task["delivery_status"] = "not_delivered"
             orch.store.save(task)
+
+        if scenario.get("mutate_execution_result") == "drop_recommended_fields":
+            for st in task.get("subtasks", []):
+                if st.get("assigned_role") in {"execution_code", "execution_general"}:
+                    result = st.get("result") or {}
+                    result["objective_echo"] = ""
+                    result["acceptance_checks"] = []
+                    result["completion_basis"] = []
+                    st["result"] = result
+            orch.store.save(task)
+            task = orch.store.load(task["task_id"])
 
         task = orch.review_task(task["task_id"])
         decision = (task.get("last_review") or {}).get("decision")
