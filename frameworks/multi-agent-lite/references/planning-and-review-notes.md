@@ -45,6 +45,11 @@ Also keep this distinction explicit:
 These are related but not identical.
 For strict-review task types, weak contract quality may still justify send-back even when acceptance evidence looks superficially positive.
 
+Acceptance mapping should also stay conservative:
+- structured executor acceptance checks are the strongest pass signal
+- task-level delivery text alone should usually imply only partial evidence, not high-confidence pass
+- avoid fallback heuristics that overclaim success from generic overlap text
+
 ## Reference split
 
 Use this file for planning / review SSOT only.

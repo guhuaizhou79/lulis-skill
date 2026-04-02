@@ -90,6 +90,21 @@ if __name__ == "__main__":
             "mutate_execution_result": "drop_recommended_fields",
             "expect_status": "PLAN",
             "expect_decision": "changes_requested"
+        },
+        {
+            "name": "acceptance-evidence-not-overclaimed",
+            "title": "acceptance evidence should stay conservative",
+            "goal": "verify acceptance mapping does not overclaim pass from generic delivery text alone",
+            "task_type": "framework_design",
+            "acceptance": [
+                "execution result echoes the objective",
+                "execution result returns acceptance checks",
+                "execution result states completion basis"
+            ],
+            "mutate_execution_result": "drop_recommended_fields",
+            "expect_status": "PLAN",
+            "expect_decision": "changes_requested",
+            "expect_acceptance_statuses": ["unknown", "unknown", "unknown"]
         }
     ]
 
@@ -106,7 +121,6 @@ if __name__ == "__main__":
         orch.execute_task(task["task_id"])
         task = orch.store.load(task["task_id"])
         materialized_paths = [root / path for path in task.get("deliverables", []) if str(path).startswith("artifacts/")]
-        preexisting_paths = [path for path in materialized_paths if path.exists()]
 
         if scenario.get("inject_failure") == "semantic_error":
             for st in task.get("subtasks", []):
@@ -142,7 +156,11 @@ if __name__ == "__main__":
         status = task.get("status")
         artifact_files = [root / path for path in task.get("deliverables", []) if str(path).startswith("artifacts/")]
         artifact_exists = [path.exists() for path in artifact_files]
-        no_artifact_residue = all(not path.exists() for path in materialized_paths) if scenario.get("inject_failure") else None
+
+        acceptance_results = (task.get("last_review") or {}).get("acceptance_results", [])
+        acceptance_statuses = [item.get("status") for item in acceptance_results[1:1 + len(scenario.get("acceptance", []))]]
+        expected_acceptance_statuses = scenario.get("expect_acceptance_statuses")
+        acceptance_expectation_ok = True if not expected_acceptance_statuses else acceptance_statuses == expected_acceptance_statuses
 
         results.append({
             "scenario": scenario["name"],
@@ -153,10 +171,12 @@ if __name__ == "__main__":
             "delivery_status": task.get("delivery_status"),
             "artifact_files": [str(path) for path in artifact_files],
             "artifact_exists": artifact_exists,
-            "acceptance_results": (task.get("last_review") or {}).get("acceptance_results", []),
+            "acceptance_results": acceptance_results,
+            "acceptance_statuses": acceptance_statuses,
+            "expected_acceptance_statuses": expected_acceptance_statuses,
             "decision": decision,
             "expected_decision": scenario.get("expect_decision"),
-            "passed_expectation": status == scenario.get("expect_status") and decision == scenario.get("expect_decision"),
+            "passed_expectation": status == scenario.get("expect_status") and decision == scenario.get("expect_decision") and acceptance_expectation_ok,
         })
 
     print(json.dumps(results, ensure_ascii=False, indent=2))
