@@ -1,8 +1,58 @@
 # MULTI-AGENT-LITE INTEGRATION REFIT PLAN
 
 日期：2026-04-11
-状态：proposal
+状态：implemented-first-cut
 目标：把 `lulis-skill/frameworks/multi-agent-lite` 从“可跑原型”收紧为“可接入现有主框架的受控协同内核”，重点补齐轻量交接、失败降级、结果包标准化、以及外层接入边界。
+
+---
+
+## 0. 当前实现态快照（2026-04-11）
+
+这份文档最初是 proposal，但截至当前这轮实现，第一批高价值改造已经不再停留在设计层，下面这些能力**已在 runtime 中落地**：
+
+### 已落地
+- `dispatcher` 已构造结构化 `handoff`，并把 budget 一起注入 subtask。
+- `delivery_synthesizer` 已输出 `task_result_packet`，并区分：
+  - `delivery_evidence`
+  - `delivery_internal_evidence`
+- `orchestrator` 已具备：
+  - `orchestration_mode`
+  - `execution_budget`
+  - `sendback_count`
+  - `degrade_history`
+  - `writeback_hint`
+- `review_engine` 已支持 gap 分类与 routing hint：
+  - `planning_gap`
+  - `execution_gap`
+  - `contract_gap`
+  - `input_gap`
+  - `delivery_gap`
+- review 失败后不再只会粗暴回 `PLAN`，当前已能区分：
+  - `DONE`
+  - `READY`（execution rerun）
+  - `PLAN`
+  - `BLOCKED`
+- execution 回流已从“状态提示”升级为“最小重跑机制”：
+  - 可标记受影响 `execution_*` subtasks
+  - 只重跑受影响 subtask
+  - 未受影响 execution subtask 保留
+- rerun 期间已支持：
+  - `stale_result` 保留
+  - active / stale evidence 分层
+  - `artifact_lifecycle` 建账
+- 验证入口已统一到：
+  - `frameworks/multi-agent-lite/validate_delivery.py`
+  - `validate_handoff_and_result_packet.py` 现为兼容包装
+
+### 当前实现的真正定位
+当前的 `multi-agent-lite` 已可视为：
+
+> **bounded staged collaboration kernel with selective review-driven recovery**
+
+也就是：
+- 它仍然不是全局 controller / memory governor
+- 但已经不再只是一个“串一下 manager/research/execution/reviewer 的 demo”
+- 它已经具备接入外层主框架所需的第一层控制面与验证面
 
 ---
 
@@ -214,28 +264,33 @@ main framework
 ### 目标
 升级为“轻控制器”。
 
-### 建议新增 task 级字段
+### 当前已落地状态（更新）
+下面这些点已经实现：
 
-- `orchestration_mode`: `full | compact | minimal`
-- `sendback_count`
-- `degrade_history`
-- `execution_budget`
-- `writeback_hint`
+- task 级新增字段已落地：
+  - `orchestration_mode`
+  - `execution_budget`
+  - `sendback_count`
+  - `degrade_history`
+  - `writeback_hint`
+  - `task_result_packet`
+- `review_task()` 已支持：
+  - `approved -> DONE`
+  - `next_action == EXECUTING -> READY`
+  - `next_action == BLOCKED -> BLOCKED`
+  - 其他 review sendback -> `PLAN`
+- sendback 达阈值后会记录 `degrade_history` 并把 `orchestration_mode` 从 `full -> compact -> minimal` 逐步降级。
+- `review -> READY` 已被纳入状态机，配合 execution rerun 生效。
+- 当前 execution 回流不再只是一条状态迁移，而是会真正给受影响 subtask 打：
+  - `rerun_needed`
+  - `rerun_reason`
+  - `stale_result`
+  - `superseded_by_rerun_round`
 
-### 建议新增控制函数
-
-- `_select_orchestration_mode(task)`
-- `_should_degrade(task, signals)`
-- `_next_sendback_target(task, review)`
-- `_build_task_result(task, review)`
-
-### review 后的目标状态不再只分两种
-建议最少区分：
-
-- `approved -> DONE`
-- `execution-fixable -> READY`
-- `replan-required -> PLAN`
-- `repeat-low-gain / needs-input-stalled -> BLOCKED`
+### 当前仍未完全做完
+- rerun 仍然是“按 affected execution subtask”粒度，不是更细的 artifact dependency graph。
+- outer framework 尚未正式消费 `writeback_hint / task_result_packet / artifact_lifecycle` 做统一 converger。
+- 目前 selective rerun 仍以 review 结果 + subtask status/error 为主，不是基于更强依赖分析。
 
 ### 预期收益
 - 回退路径更智能
@@ -429,3 +484,75 @@ main framework
 > **把它收紧为一个有 handoff 契约、有失败降级、有 compact result packet、且能被外层主框架稳定调用的轻量协同内核。**
 
 只要这一步做好，它就能自然融入现有框架，而不是成为另一套平行系统。
+
+---
+
+## 10. 当前已验证行为（不是纸面预期）
+
+当前已通过统一验证入口 `frameworks/multi-agent-lite/validate_delivery.py` 跑通的行为包括：
+
+1. baseline prototype 正常完成
+2. deliverable-required 场景可产出 task-level artifact
+3. semantic execution failure 不再默认回 `PLAN`，而是优先回 `READY` 进入 selective rerun
+4. strict review contract gap 场景可回 execution 修补，而不是统一粗暴重规划
+5. handoff packet 在 dispatch 后存在且带 budget
+6. `task_result_packet` 在 execute 后存在，并在 review 后合并 review verdict
+7. repeated sendback 会触发 `degrade_history` 与 orchestration mode 降级
+8. review -> execution rerun 已支持只标记受影响 execution subtasks
+9. rerun 后 internal evidence 可保留 stale 记录，public evidence 只暴露 active 项
+10. `artifact_lifecycle` 可记录 active / stale artifact 行
+11. 统一验证入口已收口到 `validate_delivery.py`，旧 `validate_handoff_and_result_packet.py` 现为兼容包装
+
+这部分很关键，因为它说明当前方案已经从“设计意图”进入“可回归验证的 runtime 语义”。
+
+---
+
+## 11. 当前未覆盖 / 已知边界
+
+当前仍然明确未完成或未正式纳入契约的部分：
+
+1. **outer integration 还没真正接上**
+   - 主框架尚未正式把 `multi-agent-lite` 作为可切换协同内核接入真实主线
+   - 当前主要完成的是 inner kernel 收紧与验证
+
+2. **writeback authority 仍在外层，且外层尚未消费**
+   - `task_result_packet.writeback_recommendation`
+   - `writeback_hint`
+   - `artifact_lifecycle`
+   这些字段已经具备，但还没真正挂到 outer converger
+
+3. **rerun 仍不是依赖图级别**
+   - 当前是“affected subtask”粒度
+   - 还不是基于 artifact dependency / provenance graph 的最优修复
+
+4. **验证虽然统一，但还未接 CI / 命令面文档化**
+   - 现在已有单一验证入口
+   - 但 README / skill 层还未完全同步“推荐跑法”
+
+5. **并行复杂调度仍未展开**
+   - 当前重点是 bounded staged collaboration
+   - 不是高并发调度器
+
+---
+
+## 12. 建议的下一阶段
+
+在当前 first-cut runtime 已稳定的前提下，后续更合理的顺序是：
+
+### S1. outer framework integration
+把主框架对 `multi-agent-lite` 的调用边界正式接起来：
+- 何时进入 staged path
+- 外层如何消费 `task_result_packet`
+- 外层如何决定 writeback / converger
+
+### S2. validation command/document sync
+把统一验证入口同步到：
+- README
+- skill 文档
+- 可能的 future CI hook
+
+### S3. provenance-strengthening（可选）
+如果后续确实出现复杂交付物覆盖/回退问题，再考虑：
+- artifact dependency graph
+- stronger supersede chain
+- richer rerun provenance

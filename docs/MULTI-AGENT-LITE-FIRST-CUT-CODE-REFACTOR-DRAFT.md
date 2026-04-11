@@ -1,9 +1,11 @@
 # MULTI-AGENT-LITE FIRST CUT CODE REFACTOR DRAFT
 
 日期：2026-04-11
-状态：draft-for-implementation
+状态：partially-implemented
 关联：`docs/MULTI-AGENT-LITE-INTEGRATION-REFIT-PLAN.md`
 目标：把第一批最值得动的改造点进一步收敛成“接近可开工”的代码级草案，覆盖 schema、函数职责、最小字段、以及伪 diff 方向。
+
+> 更新说明：这份文档保留了 first-cut 设计草案属性，但其中关于 `handoff`、`task_result_packet`、`review routing`、`execution rerun`、`stale evidence`、`artifact lifecycle` 的核心方向，当前已在 runtime 实现。尚未实现的部分，应以文中明确写成“建议 / 草案 / 可选”的段落为准，不要再把整份文档当成纯 proposal。
 
 ---
 
