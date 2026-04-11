@@ -52,6 +52,10 @@
       "additionalProperties": true
     },
     "residual_risks": { "type": "array", "items": { "type": "string" } },
+    "affected_subtasks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "recommended_sendback_target": { "type": "string" },
     "stop_reason": { "type": ["string", "null"] }
   },

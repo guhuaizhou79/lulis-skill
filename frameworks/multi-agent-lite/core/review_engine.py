@@ -238,6 +238,18 @@ class ReviewEngine:
         delivery_status = "delivered" if delivery_summary and task_level_deliverables else "not_delivered"
 
         gap_groups = self._classify_gap_groups(blocking_gaps)
+        affected_subtasks: List[str] = []
+        for st in subtasks:
+            subtask_id = str(st.get("subtask_id") or "").strip()
+            if not subtask_id:
+                continue
+            if st.get("dispatch_status") in {"failed", "needs_input"}:
+                affected_subtasks.append(subtask_id)
+                continue
+            result = st.get("result") or {}
+            if result.get("transport_error") or result.get("protocol_error") or result.get("semantic_error"):
+                affected_subtasks.append(subtask_id)
+        affected_subtasks = list(dict.fromkeys(affected_subtasks))
         recommended_sendback_target, next_action, stop_reason = self._recommend_sendback(gap_groups) if decision != "approved" else ("none", "DONE", None)
 
         return {
@@ -252,6 +264,7 @@ class ReviewEngine:
             "delivery_status": delivery_status,
             "blocking_gaps": blocking_gaps,
             "gap_groups": gap_groups,
+            "affected_subtasks": affected_subtasks,
             "residual_risks": residual_risks + [risk for risk in task_level_risks if risk not in residual_risks],
             "recommended_sendback_target": recommended_sendback_target,
             "next_action": next_action,

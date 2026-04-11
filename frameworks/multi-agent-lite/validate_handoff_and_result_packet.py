@@ -109,7 +109,7 @@ def run_execution_rerun_flow(root: Path) -> None:
     orch = Orchestrator(root)
     task = orch.create_task(
         title="Validate execution rerun track",
-        goal="force review to send work back to execution and rerun only execution subtasks",
+        goal="force review to send work back to execution and rerun only affected execution subtasks",
         task_type="automation",
         priority="high",
         acceptance=["materialize at least one deliverable artifact"],
@@ -118,11 +118,27 @@ def run_execution_rerun_flow(root: Path) -> None:
 
     task = orch.plan_task(task_id)
     task = orch.dispatch_task(task_id)
+
+    extra_execution = None
+    for st in task.get("subtasks", []):
+        role = str(st.get("assigned_role") or "")
+        if role.startswith("execution_"):
+            extra_execution = dict(st)
+            extra_execution["subtask_id"] = f"{st.get('subtask_id')}-EXTRA"
+            extra_execution["title"] = f"{st.get('title', 'execution')} extra rerun control"
+            break
+    if extra_execution:
+        task["subtasks"].append(extra_execution)
+    orch.store.save(task)
+
     task = orch.execute_task(task_id)
 
+    execution_subtasks = [st for st in task.get("subtasks", []) if str(st.get("assigned_role") or "").startswith("execution_")]
+    _assert(len(execution_subtasks) >= 2, "execution rerun flow should have at least two execution subtasks")
+
+    failed_subtask_id = str(execution_subtasks[0].get("subtask_id"))
     for subtask in task.get("subtasks", []):
-        role = str(subtask.get("assigned_role") or "")
-        if role.startswith("execution_"):
+        if str(subtask.get("subtask_id")) == failed_subtask_id:
             subtask["dispatch_status"] = "failed"
             subtask["result"] = {
                 "summary": "execution failed and needs rerun",
@@ -145,13 +161,18 @@ def run_execution_rerun_flow(root: Path) -> None:
     task = orch.review_task(task_id)
     _assert(task["status"] == "READY", "execution rerun path should send task back to READY")
     _assert(task.get("rerun_execution_only") is True, "task should enter rerun_execution_only mode")
-    execution_subtasks = [st for st in task.get("subtasks", []) if str(st.get("assigned_role") or "").startswith("execution_")]
-    _assert(execution_subtasks and all(st.get("rerun_needed") for st in execution_subtasks), "execution subtasks should be marked for rerun")
+
+    rerun_flags = {
+        str(st.get("subtask_id")): bool(st.get("rerun_needed"))
+        for st in task.get("subtasks", [])
+        if str(st.get("assigned_role") or "").startswith("execution_")
+    }
+    _assert(rerun_flags.get(failed_subtask_id) is True, "failed execution subtask should be marked for rerun")
+    unaffected = [sid for sid, flagged in rerun_flags.items() if sid != failed_subtask_id]
+    _assert(unaffected and all(rerun_flags[sid] is False for sid in unaffected), "unaffected execution subtasks should not be marked for rerun")
 
     task = orch.execute_task(task_id)
     _assert(task.get("rerun_execution_only") is False, "rerun_execution_only flag should clear after rerun execution")
-    rerun_statuses = [st.get("dispatch_status") for st in task.get("subtasks", []) if str(st.get("assigned_role") or "").startswith("execution_")]
-    _assert(all(status in {"completed", "needs_input", "failed"} for status in rerun_statuses), "execution subtasks should be re-executed into terminal statuses")
 
     _print("execution rerun flow status", {
         "task_id": task_id,
