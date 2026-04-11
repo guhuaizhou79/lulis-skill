@@ -83,6 +83,48 @@ When the task needs:
 
 ---
 
+## Outer framework skeleton
+
+A first-cut outer framework shell now also exists at:
+
+- `frameworks/multi-agent-lite/outer_framework.py`
+
+It currently provides:
+- task shape classification
+- route selection orchestration
+- direct / light / staged dispatch shell
+- unified outer result convergence
+- route explanation
+- normalized outer status
+- advisory writeback policy stub
+
+### Normalized outer status
+
+The outer shell exposes a simplified status layer so upper callers do not need to interpret every inner runtime status directly.
+
+Current normalized statuses include:
+- `completed`
+- `needs_execution_rerun`
+- `needs_replan`
+- `blocked`
+- `failed`
+- `in_progress`
+
+### Writeback policy stub
+
+The outer shell also exposes:
+- `writeback_policy`
+
+This is intentionally advisory-only.
+It may recommend whether a result is worth:
+- summary writeback
+- memory writeback
+- state writeback
+
+But it must not directly mutate global memory/docs/state surfaces by itself.
+
+---
+
 ## Validation
 
 Primary validation entrypoint:
@@ -92,6 +134,10 @@ Primary validation entrypoint:
 Additional adapter validation:
 
 - `python3 frameworks/multi-agent-lite/validate_outer_adapter.py`
+
+Outer framework validation:
+
+- `python3 frameworks/multi-agent-lite/validate_outer_framework.py`
 
 Backward-compatible wrapper:
 

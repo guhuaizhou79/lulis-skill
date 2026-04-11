@@ -194,6 +194,25 @@ adapter 对外返回时，建议至少稳定以下字段：
 - 调 `adapter.run(payload)`
 - 再决定如何汇总 / 写回
 
+### 当前已落地的外层壳补充
+
+除了 adapter 之外，当前 repo 内还已补上一个最小 outer framework skeleton：
+
+- `frameworks/multi-agent-lite/outer_framework.py`
+
+它当前负责：
+- `classify_task_shape(payload)`
+- route 解释（`route_explanation`）
+- 统一 outer status 归一（`normalized_status`）
+- advisory-only 的 `writeback_policy`
+- direct / light / staged 三路结果的统一 converger
+
+这意味着当前阶段已经不仅仅是“inner kernel + adapter”，而是：
+
+> **inner kernel + outer adapter + outer shell skeleton**
+
+但要注意：outer shell 现在仍然只是骨架，不等于已经完成真正的全局主框架接管。
+
 ---
 
 ## 9. 当前建议的下一步代码动作

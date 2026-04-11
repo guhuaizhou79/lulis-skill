@@ -43,6 +43,21 @@
 - 验证入口已统一到：
   - `frameworks/multi-agent-lite/validate_delivery.py`
   - `validate_handoff_and_result_packet.py` 现为兼容包装
+- outer adapter 已落地：
+  - `frameworks/multi-agent-lite/outer_adapter.py`
+- outer framework skeleton 已落地：
+  - `frameworks/multi-agent-lite/outer_framework.py`
+  - 已支持 `route_explanation`
+  - 已支持 `normalized_status`
+  - 已支持 advisory-only `writeback_policy`
+
+### 当前外层壳定位
+当前外层部分应理解为：
+
+> **outer shell skeleton, not full outer framework runtime**
+
+也就是它已经具备分类、路由、统一结果面与 writeback policy stub，
+但还没有真正接管全局 registry、真实写回执行、或跨任务状态总控。
 
 ### 当前实现的真正定位
 当前的 `multi-agent-lite` 已可视为：
