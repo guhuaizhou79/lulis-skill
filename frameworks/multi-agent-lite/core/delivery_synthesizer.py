@@ -82,6 +82,21 @@ def _build_evidence_entry(subtask_id: str, role: str, result: Dict[str, Any], st
     return entry
 
 
+def _append_artifact_lifecycle(rows: List[Dict[str, Any]], subtask_id: str, role: str, artifacts: List[str], state: str, round_id: int | None = None, superseded_by: int | None = None) -> None:
+    for artifact in artifacts:
+        row = {
+            "artifact": artifact,
+            "subtask_id": subtask_id,
+            "role": role,
+            "state": state,
+        }
+        if round_id is not None:
+            row["round"] = round_id
+        if superseded_by is not None:
+            row["superseded_by_rerun_round"] = superseded_by
+        rows.append(row)
+
+
 def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     subtasks: List[Dict[str, Any]] = task.get("subtasks", []) or []
 
@@ -92,6 +107,7 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     evidence_map: List[Dict[str, Any]] = []
     internal_evidence_map: List[Dict[str, Any]] = []
     deliverable_candidates: List[str] = []
+    artifact_lifecycle: List[Dict[str, Any]] = []
 
     for st in subtasks:
         role = st.get("assigned_role")
@@ -103,11 +119,28 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
         stale_result = st.get("stale_result") or {}
         stale_round = st.get("superseded_by_rerun_round")
         if stale_result:
-            internal_evidence_map.append(_build_evidence_entry(subtask_id, role, stale_result, state="stale", round_id=stale_round))
+            stale_entry = _build_evidence_entry(subtask_id, role, stale_result, state="stale", round_id=stale_round)
+            internal_evidence_map.append(stale_entry)
+            _append_artifact_lifecycle(
+                artifact_lifecycle,
+                subtask_id,
+                str(role),
+                stale_entry.get("artifacts") or [],
+                state="stale",
+                round_id=stale_round,
+                superseded_by=stale_round,
+            )
 
         active_entry = _build_evidence_entry(subtask_id, role, result, state="active")
         evidence_map.append(active_entry)
         internal_evidence_map.append(active_entry)
+        _append_artifact_lifecycle(
+            artifact_lifecycle,
+            subtask_id,
+            str(role),
+            active_entry.get("artifacts") or [],
+            state="active",
+        )
 
         summary = active_entry["summary"]
         changes = active_entry["changes"]
@@ -149,6 +182,7 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     task["delivery_risks"] = _unique(residual_risks)
     task["delivery_evidence"] = evidence_map
     task["delivery_internal_evidence"] = internal_evidence_map
+    task["artifact_lifecycle"] = artifact_lifecycle
     task["deliverable_candidates"] = deliverable_candidates
     task["delivery_status"] = delivery_status
     task["task_result_packet"] = {

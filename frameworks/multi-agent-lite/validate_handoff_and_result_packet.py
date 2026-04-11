@@ -137,13 +137,15 @@ def run_execution_rerun_flow(root: Path) -> None:
     _assert(len(execution_subtasks) >= 2, "execution rerun flow should have at least two execution subtasks")
 
     failed_subtask_id = str(execution_subtasks[0].get("subtask_id"))
+    original_failed_result = dict(execution_subtasks[0].get("result") or {})
+    original_failed_artifacts = list(original_failed_result.get("artifacts") or [])
     for subtask in task.get("subtasks", []):
         if str(subtask.get("subtask_id")) == failed_subtask_id:
             subtask["dispatch_status"] = "failed"
             subtask["result"] = {
                 "summary": "execution failed and needs rerun",
                 "changes": [],
-                "artifacts": [],
+                "artifacts": original_failed_artifacts,
                 "risks": ["forced rerun validation"],
                 "unknowns": [],
                 "next_suggestion": "rerun execution",
@@ -177,9 +179,12 @@ def run_execution_rerun_flow(root: Path) -> None:
     internal_evidence = task.get("delivery_internal_evidence") or []
     stale_entries = [item for item in internal_evidence if item.get("state") == "stale"]
     active_entries = [item for item in internal_evidence if item.get("state") == "active"]
+    artifact_lifecycle = task.get("artifact_lifecycle") or []
     _assert(any(str(item.get("subtask_id")) == failed_subtask_id for item in stale_entries), "failed execution subtask should retain stale evidence record")
     _assert(all(str(item.get("subtask_id")) != failed_subtask_id or item.get("state") == "active" for item in task.get("delivery_evidence") or []), "public delivery evidence should expose only active entries")
     _assert(active_entries, "internal evidence should still include active entries after rerun")
+    _assert(any(row.get("state") == "stale" and str(row.get("subtask_id")) == failed_subtask_id for row in artifact_lifecycle), "artifact lifecycle should retain stale artifact rows for rerun subtask")
+    _assert(any(row.get("state") == "active" for row in artifact_lifecycle), "artifact lifecycle should retain active artifact rows")
 
     _print("execution rerun flow status", {
         "task_id": task_id,
