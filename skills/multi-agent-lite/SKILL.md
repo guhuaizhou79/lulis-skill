@@ -14,6 +14,19 @@ Trigger when the user clearly wants one of these patterns:
 - 按 manager / research / execution / reviewer 的链路推进
 - 先规划、再执行、再 review 的阶段化流程
 - 需要更强的任务拆分、分派、审查、回退机制
+- 需要 review 驱动的 sendback / rerun，而不是单次直出
+- 需要 task-level compact result packet 作为外层收敛对象
+
+### Preferred outer routing position
+
+At the outer framework layer, treat this skill as the **staged path**, not the default path.
+
+Recommended route families:
+- `direct`
+- `light_role_check`
+- `multi_agent_lite`
+
+Only route into `multi_agent_lite` when staged orchestration is actually justified.
 
 ## Do not route into this skill when
 
@@ -59,3 +72,49 @@ If those conditions are not met, send the task back instead of declaring success
 - `references/framework-status.md` → current maturity, limitations, and interpretation
 - `references/repo-layout.md` → repo boundaries and file ownership
 - `references/project-usage-guide.md` → project-facing usage guidance
+
+## Current runtime notes
+
+Current runtime already includes:
+- structured handoff packets
+- task-level `task_result_packet`
+- review gap classification and routing hints
+- selective execution rerun after review
+- stale / active evidence split
+- `artifact_lifecycle` tracking
+- unified validation entrypoint
+- outer adapter shim at `frameworks/multi-agent-lite/outer_adapter.py`
+
+Do not describe this as a purely conceptual prototype anymore. It is still lightweight and bounded, but key first-cut runtime behaviors are already implemented.
+
+## Validation
+
+Primary validation:
+
+```bash
+python3 frameworks/multi-agent-lite/validate_delivery.py
+```
+
+Outer adapter validation:
+
+```bash
+python3 frameworks/multi-agent-lite/validate_outer_adapter.py
+```
+
+Backward-compatible wrapper:
+
+```bash
+python3 frameworks/multi-agent-lite/validate_handoff_and_result_packet.py
+```
+
+## Integration boundary
+
+If an outer framework consumes this runtime, prefer reading:
+- `task_result_packet`
+- `final_status`
+- `orchestration_mode`
+- `degrade_history`
+- `artifact_lifecycle`
+
+Treat `writeback_hint` / `writeback_recommendation` as advisory only.
+Outer framework remains the final authority for memory/docs/state writes.

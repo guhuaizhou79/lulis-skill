@@ -4,6 +4,139 @@ A lightweight staged orchestration framework for OpenClaw.
 
 ## What it is
 
+`multi-agent-lite` is a **bounded staged collaboration kernel**.
+
+It is good at:
+- planning -> execution -> review task structure
+- lightweight role separation
+- review-driven sendback
+- selective execution rerun
+- compact task-level result packaging
+
+It is **not** intended to be:
+- a global controller for all work
+- a memory / writeback governor
+- a replacement for the outer framework
+- the default path for every task
+
+The correct integration model is:
+
+> outer framework decides whether to use direct / light / staged path, and `multi-agent-lite` only owns the staged inner loop.
+
+---
+
+## Current runtime capabilities
+
+As of the current first-cut runtime, `multi-agent-lite` already supports:
+
+- structured `handoff` attached during dispatch
+- `task_result_packet` synthesis at task level
+- `review_verdict` merge back into task-level result packet
+- `gap_groups` + review routing hints
+- `sendback_count` and `degrade_history`
+- `orchestration_mode` downgrade (`full -> compact -> minimal`)
+- selective `review -> execution` rerun path
+- stale / active evidence split
+- `artifact_lifecycle` tracking across reruns
+- unified validation entrypoint
+
+---
+
+## Outer adapter
+
+A first-cut outer adapter shim now exists at:
+
+- `frameworks/multi-agent-lite/outer_adapter.py`
+
+It provides:
+- `choose_route(payload)`
+- `run_multi_agent_lite(root, payload)`
+- `build_outer_result(task)`
+- `run_adapter(root, payload)`
+
+### Recommended outer routing model
+
+Use three routes at the outer layer:
+
+- `direct`
+- `light_role_check`
+- `multi_agent_lite`
+
+#### Prefer `direct`
+When the task is:
+- one-turn answerable
+- lightweight judgment / explanation
+- simple fact / choice / path lookup
+
+#### Prefer `light_role_check`
+When the task needs:
+- a little structure
+- a lightweight self-check
+- but not a full plan/execute/review loop
+
+#### Prefer `multi_agent_lite`
+When the task needs:
+- explicit staged collaboration
+- planning / execution / review separation
+- review-driven rerun or sendback discipline
+- a compact but auditable task-level result
+
+---
+
+## Validation
+
+Primary validation entrypoint:
+
+- `python3 frameworks/multi-agent-lite/validate_delivery.py`
+
+Additional adapter validation:
+
+- `python3 frameworks/multi-agent-lite/validate_outer_adapter.py`
+
+Backward-compatible wrapper:
+
+- `python3 frameworks/multi-agent-lite/validate_handoff_and_result_packet.py`
+
+### What the unified validation covers
+
+`validate_delivery.py` currently covers:
+- baseline staged flow
+- deliverable-required flow
+- semantic failure -> rerun-ready routing
+- strict review contract-gap routing
+- handoff presence
+- task_result_packet generation
+- degrade history
+- selective execution rerun
+- stale evidence retention
+- artifact lifecycle retention
+
+---
+
+## Integration boundary
+
+The outer framework should consume these first:
+- `task_result_packet`
+- `final_status`
+- `orchestration_mode`
+- `degrade_history`
+- `artifact_lifecycle`
+
+Do **not** let `multi-agent-lite` directly decide global writeback.
+It may emit:
+- `writeback_recommendation`
+- `writeback_hint`
+
+But outer framework should remain the final authority for:
+- memory writes
+- docs writes
+- state sync
+- working-summary / current-state updates
+
+---
+
+## Repo map
+
 A four-role collaboration path built around:
 - manager
 - research
