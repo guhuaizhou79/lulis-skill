@@ -82,7 +82,27 @@ class Orchestrator:
         packet["review_reasons"] = review.get("reasons", [])
         packet["delivery_status"] = review.get("delivery_status", task.get("delivery_status", "unknown"))
         packet["recommended_sendback_target"] = review.get("recommended_sendback_target", "none")
+        packet["next_action"] = review.get("next_action")
         return packet
+
+    def _mark_execution_rerun(self, task: Dict[str, Any], review: Dict[str, Any]) -> Dict[str, Any]:
+        reasons = review.get("blocking_gaps", []) or []
+        marked = []
+        for subtask in task.get("subtasks", []):
+            role = str(subtask.get("assigned_role") or "")
+            if role.startswith("execution_"):
+                updated = {
+                    **subtask,
+                    "rerun_needed": True,
+                    "rerun_reason": reasons[:3],
+                    "dispatch_status": "ready",
+                }
+                marked.append(updated)
+            else:
+                marked.append(subtask)
+        task["subtasks"] = marked
+        task["rerun_execution_only"] = True
+        return task
 
     def create_task(
         self,
@@ -235,6 +255,7 @@ class Orchestrator:
             if next_action == "BLOCKED":
                 target = "BLOCKED"
             elif next_action == "EXECUTING":
+                task = self._mark_execution_rerun(task, review)
                 target = "READY"
             else:
                 target = "PLAN"
