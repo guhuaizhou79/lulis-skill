@@ -8,6 +8,39 @@ from .task_expectations import get_task_expectations
 
 
 class ReviewEngine:
+    def _classify_gap_groups(self, blocking_gaps: List[str]) -> Dict[str, List[str]]:
+        groups: Dict[str, List[str]] = {
+            "planning_gap": [],
+            "execution_gap": [],
+            "contract_gap": [],
+            "input_gap": [],
+            "delivery_gap": [],
+        }
+        for gap in blocking_gaps:
+            text = str(gap or "").strip()
+            if not text:
+                continue
+            if "needs input" in text:
+                groups["input_gap"].append(text)
+            elif any(token in text for token in ["missing assigned_model", "transport_error", "protocol_error", "semantic_error", "not completed"]):
+                groups["execution_gap"].append(text)
+            elif any(token in text for token in ["missing recommended executor fields", "contract quality"]):
+                groups["contract_gap"].append(text)
+            elif any(token in text for token in ["no subtasks available"]):
+                groups["planning_gap"].append(text)
+            else:
+                groups["delivery_gap"].append(text)
+        return groups
+
+    def _recommend_sendback(self, groups: Dict[str, List[str]]) -> tuple[str, str, str | None]:
+        if groups["input_gap"]:
+            return "blocked", "BLOCKED", "waiting for external input"
+        if groups["planning_gap"]:
+            return "manager", "PLAN", None
+        if groups["execution_gap"] or groups["contract_gap"]:
+            return "execution", "EXECUTING", None
+        return "execution", "PLAN", None
+
     def evaluate(self, task: Dict[str, Any]) -> Dict[str, Any]:
         acceptance: List[str] = task.get("acceptance", [])
         subtasks: List[Dict[str, Any]] = task.get("subtasks", [])
@@ -31,7 +64,6 @@ class ReviewEngine:
         task_level_deliverables = task.get("deliverables") or []
         delivery_summary = str(task.get("delivery_summary") or "").strip()
         delivery_changes = task.get("delivery_changes") or []
-        delivery_evidence = task.get("delivery_evidence") or []
         task_level_risks = task.get("delivery_risks") or []
         has_primary_failure = False
 
@@ -157,6 +189,7 @@ class ReviewEngine:
                 quality_signals.append(
                     "contract quality gaps: " + " | ".join(deduped_contract_gaps[:3])
                 )
+                blocking_gaps.extend([gap for gap in deduped_contract_gaps if gap not in blocking_gaps])
 
         if needs_input_signals:
             deduped_needs = []
@@ -202,9 +235,10 @@ class ReviewEngine:
         if expectations.get("strict_review") and contract_quality_gaps and not issues:
             issues.append("strict-review task lacks recommended executor contract fields")
         decision = "approved" if not issues else "changes_requested"
-        next_action = "DONE" if decision == "approved" else "PLAN"
         delivery_status = "delivered" if delivery_summary and task_level_deliverables else "not_delivered"
-        recommended_sendback_target = "none" if decision == "approved" else "execution"
+
+        gap_groups = self._classify_gap_groups(blocking_gaps)
+        recommended_sendback_target, next_action, stop_reason = self._recommend_sendback(gap_groups) if decision != "approved" else ("none", "DONE", None)
 
         return {
             "review_id": f"REV-{uuid4().hex[:8].upper()}",
@@ -217,7 +251,9 @@ class ReviewEngine:
             "acceptance_results": acceptance_results,
             "delivery_status": delivery_status,
             "blocking_gaps": blocking_gaps,
-            "residual_risks": residual_risks,
+            "gap_groups": gap_groups,
+            "residual_risks": residual_risks + [risk for risk in task_level_risks if risk not in residual_risks],
             "recommended_sendback_target": recommended_sendback_target,
             "next_action": next_action,
+            "stop_reason": stop_reason,
         }

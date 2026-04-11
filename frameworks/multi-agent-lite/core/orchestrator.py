@@ -231,7 +231,13 @@ class Orchestrator:
             max_rounds = int((task.get("execution_budget") or {}).get("max_sendback_rounds", 2))
             if task["sendback_count"] >= max_rounds:
                 task = self._apply_degrade(task, reason="sendback threshold reached")
-            target = "PLAN"
+            next_action = review.get("next_action", "PLAN")
+            if next_action == "BLOCKED":
+                target = "BLOCKED"
+            elif next_action == "EXECUTING":
+                target = "READY"
+            else:
+                target = "PLAN"
         task["task_result_packet"] = self._build_review_augmented_result(task, review)
         assert_transition(prev, target)
         task["status"] = target

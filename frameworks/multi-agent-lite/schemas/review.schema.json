@@ -23,7 +23,7 @@
     "model": { "type": "string" },
     "decision": { "type": "string", "enum": ["approved", "changes_requested", "rejected"] },
     "reasons": { "type": "array", "items": { "type": "string" } },
-    "next_action": { "type": "string" },
+    "next_action": { "type": "string", "enum": ["DONE", "PLAN", "EXECUTING", "BLOCKED"] },
     "acceptance_results": {
       "type": "array",
       "items": {
@@ -40,8 +40,20 @@
     "delivery_status": { "type": "string" },
     "quality_signals": { "type": "array", "items": { "type": "string" } },
     "blocking_gaps": { "type": "array", "items": { "type": "string" } },
+    "gap_groups": {
+      "type": "object",
+      "properties": {
+        "planning_gap": { "type": "array", "items": { "type": "string" } },
+        "execution_gap": { "type": "array", "items": { "type": "string" } },
+        "contract_gap": { "type": "array", "items": { "type": "string" } },
+        "input_gap": { "type": "array", "items": { "type": "string" } },
+        "delivery_gap": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
     "residual_risks": { "type": "array", "items": { "type": "string" } },
-    "recommended_sendback_target": { "type": "string" }
+    "recommended_sendback_target": { "type": "string" },
+    "stop_reason": { "type": ["string", "null"] }
   },
   "additionalProperties": true
 }
