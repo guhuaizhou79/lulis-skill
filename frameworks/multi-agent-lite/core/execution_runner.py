@@ -53,6 +53,8 @@ def execute_subtasks(task: Dict[str, Any], executor) -> Dict[str, Any]:
             "result": result,
             "rerun_needed": False,
             "rerun_reason": None,
+            "stale_result": subtask.get("stale_result"),
+            "superseded_by_rerun_round": subtask.get("superseded_by_rerun_round"),
         }
         executed.append(updated)
         artifacts.extend(result.get("artifacts", []))

@@ -174,6 +174,13 @@ def run_execution_rerun_flow(root: Path) -> None:
     task = orch.execute_task(task_id)
     _assert(task.get("rerun_execution_only") is False, "rerun_execution_only flag should clear after rerun execution")
 
+    internal_evidence = task.get("delivery_internal_evidence") or []
+    stale_entries = [item for item in internal_evidence if item.get("state") == "stale"]
+    active_entries = [item for item in internal_evidence if item.get("state") == "active"]
+    _assert(any(str(item.get("subtask_id")) == failed_subtask_id for item in stale_entries), "failed execution subtask should retain stale evidence record")
+    _assert(all(str(item.get("subtask_id")) != failed_subtask_id or item.get("state") == "active" for item in task.get("delivery_evidence") or []), "public delivery evidence should expose only active entries")
+    _assert(active_entries, "internal evidence should still include active entries after rerun")
+
     _print("execution rerun flow status", {
         "task_id": task_id,
         "status": task["status"],

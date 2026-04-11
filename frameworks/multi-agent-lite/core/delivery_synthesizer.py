@@ -21,6 +21,8 @@ def _unique(items: List[str]) -> List[str]:
 def _pick_evidence_refs(evidence_map: List[Dict[str, Any]], max_refs: int = 5) -> List[str]:
     refs: List[str] = []
     for item in evidence_map:
+        if item.get("state") != "active":
+            continue
         subtask_id = str(item.get("subtask_id") or "").strip()
         summary = str(item.get("summary") or "").strip()
         if subtask_id and summary:
@@ -57,14 +59,38 @@ def _build_writeback_recommendation(task: Dict[str, Any]) -> Dict[str, Any]:
     return task.get("writeback_hint") or {"level": 0, "targets": []}
 
 
+def _build_evidence_entry(subtask_id: str, role: str, result: Dict[str, Any], state: str, round_id: int | None = None) -> Dict[str, Any]:
+    summary = str(result.get("summary") or "").strip()
+    changes = _unique(list(result.get("changes") or []))
+    artifacts = _unique(list(result.get("artifacts") or []))
+    risks = _unique(list(result.get("risks") or []))
+    entry = {
+        "subtask_id": subtask_id,
+        "role": role,
+        "summary": summary,
+        "changes": changes,
+        "artifacts": artifacts,
+        "risks": risks,
+        "evidence": _unique(([summary] if summary else []) + changes + artifacts),
+        "state": state,
+    }
+    if round_id is not None:
+        entry["round"] = round_id
+    stale_reason = result.get("stale_reason")
+    if stale_reason:
+        entry["stale_reason"] = stale_reason
+    return entry
+
+
 def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     subtasks: List[Dict[str, Any]] = task.get("subtasks", []) or []
 
-    deliverables: List[str] = list(task.get("artifacts", []) or [])
+    deliverables: List[str] = []
     delivery_summary_parts: List[str] = []
     delivery_changes: List[str] = []
     residual_risks: List[str] = []
     evidence_map: List[Dict[str, Any]] = []
+    internal_evidence_map: List[Dict[str, Any]] = []
     deliverable_candidates: List[str] = []
 
     for st in subtasks:
@@ -73,11 +99,20 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
         if role not in EXECUTION_ROLES:
             continue
 
-        summary = str(result.get("summary") or "").strip()
-        changes = _unique(list(result.get("changes") or []))
-        artifacts = _unique(list(result.get("artifacts") or []))
-        risks = _unique(list(result.get("risks") or []))
         subtask_id = str(st.get("subtask_id") or "")
+        stale_result = st.get("stale_result") or {}
+        stale_round = st.get("superseded_by_rerun_round")
+        if stale_result:
+            internal_evidence_map.append(_build_evidence_entry(subtask_id, role, stale_result, state="stale", round_id=stale_round))
+
+        active_entry = _build_evidence_entry(subtask_id, role, result, state="active")
+        evidence_map.append(active_entry)
+        internal_evidence_map.append(active_entry)
+
+        summary = active_entry["summary"]
+        changes = active_entry["changes"]
+        artifacts = active_entry["artifacts"]
+        risks = active_entry["risks"]
 
         if summary:
             delivery_summary_parts.append(summary)
@@ -93,16 +128,6 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
         for item in risks:
             if item not in residual_risks:
                 residual_risks.append(item)
-
-        evidence_map.append({
-            "subtask_id": subtask_id,
-            "role": role,
-            "summary": summary,
-            "changes": changes,
-            "artifacts": artifacts,
-            "risks": risks,
-            "evidence": _unique(([summary] if summary else []) + changes + artifacts),
-        })
 
     delivery_summary = " | ".join(_unique(delivery_summary_parts)[:3])
     deliverables = _unique(deliverables)
@@ -123,7 +148,7 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     task["delivery_changes"] = delivery_changes
     task["delivery_risks"] = _unique(residual_risks)
     task["delivery_evidence"] = evidence_map
-    task["delivery_internal_evidence"] = evidence_map
+    task["delivery_internal_evidence"] = internal_evidence_map
     task["deliverable_candidates"] = deliverable_candidates
     task["delivery_status"] = delivery_status
     task["task_result_packet"] = {

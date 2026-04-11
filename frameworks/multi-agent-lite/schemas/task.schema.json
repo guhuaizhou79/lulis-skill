@@ -22,6 +22,7 @@
     "delivery_risks": { "type": "array", "items": { "type": "string" } },
     "delivery_evidence": { "type": "array", "items": { "type": "object" } },
     "delivery_internal_evidence": { "type": "array", "items": { "type": "object" } },
+    "artifact_lifecycle": { "type": "array", "items": { "type": "object" } },
     "delivery_summary": { "type": "string" },
     "delivery_status": { "type": "string", "enum": ["not_started", "assembled", "delivered", "not_delivered", "unknown"] },
     "planning_profile": { "type": "string", "enum": ["direct_review", "research_execute_review", "research_execute_review_strict"] },

@@ -88,6 +88,7 @@ class Orchestrator:
     def _mark_execution_rerun(self, task: Dict[str, Any], review: Dict[str, Any]) -> Dict[str, Any]:
         reasons = review.get("blocking_gaps", []) or []
         affected = set(review.get("affected_subtasks") or [])
+        rerun_round = int(task.get("sendback_count", 0)) + 1
         marked = []
         for subtask in task.get("subtasks", []):
             role = str(subtask.get("assigned_role") or "")
@@ -96,11 +97,18 @@ class Orchestrator:
                 not affected or subtask_id in affected or subtask.get("dispatch_status") != "completed"
             )
             if should_rerun:
+                stale_result = dict(subtask.get("result") or {})
+                if stale_result:
+                    stale_result["stale"] = True
+                    stale_result["stale_reason"] = reasons[:3]
+                    stale_result["stale_round"] = rerun_round
                 updated = {
                     **subtask,
                     "rerun_needed": True,
                     "rerun_reason": reasons[:3],
                     "dispatch_status": "ready",
+                    "stale_result": stale_result or None,
+                    "superseded_by_rerun_round": rerun_round,
                 }
                 marked.append(updated)
             else:
