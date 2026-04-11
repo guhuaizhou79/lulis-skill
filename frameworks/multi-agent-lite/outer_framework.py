@@ -34,6 +34,56 @@ def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def explain_route(task_shape: Dict[str, Any], route: str) -> str:
+    if route == "direct":
+        return "task is simple enough for direct handling without staged collaboration"
+    if route == "light_role_check":
+        return "task benefits from lightweight structure but does not justify full staged orchestration"
+    if task_shape.get("explicit_staged"):
+        return "task explicitly requested staged collaboration"
+    if task_shape.get("requires_artifact"):
+        return "task requires artifact-oriented delivery and review-capable staged handling"
+    return "task complexity or priority justifies multi_agent_lite staged collaboration"
+
+
+def normalize_outer_status(route_result: Dict[str, Any]) -> str:
+    final_status = str(route_result.get("final_status") or "DONE")
+    packet = route_result.get("task_result_packet") or {}
+    packet_status = str(packet.get("status") or "")
+
+    if final_status == "DONE" and packet_status == "success":
+        return "completed"
+    if final_status == "READY":
+        return "needs_execution_rerun"
+    if final_status == "PLAN":
+        return "needs_replan"
+    if final_status == "BLOCKED" or packet_status == "blocked":
+        return "blocked"
+    if final_status == "FAILED" or packet_status == "failed":
+        return "failed"
+    return "in_progress"
+
+
+def build_writeback_policy(route_result: Dict[str, Any]) -> Dict[str, Any]:
+    packet = route_result.get("task_result_packet") or {}
+    final_status = str(route_result.get("final_status") or "DONE")
+    packet_status = str(packet.get("status") or "")
+    advisory = route_result.get("writeback_hint") or {"level": 0, "targets": []}
+
+    should_write_summary = final_status == "DONE" and packet_status == "success"
+    should_write_memory = should_write_summary and advisory.get("level", 0) >= 2
+    should_write_state = final_status in {"READY", "PLAN", "BLOCKED"}
+
+    return {
+        "advisory_only": True,
+        "should_write_summary": should_write_summary,
+        "should_write_memory": should_write_memory,
+        "should_write_state": should_write_state,
+        "recommended_targets": advisory.get("targets") or [],
+        "reason": "outer framework retains final authority for memory/docs/state writes",
+    }
+
+
 def _run_direct(payload: Dict[str, Any]) -> Dict[str, Any]:
     summary = str(payload.get("goal") or payload.get("title") or "direct task")
     return {
@@ -82,16 +132,20 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any]) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
+    route = str(route_result.get("route") or "direct")
     return {
         "framework": "outer_framework_skeleton",
         "title": payload.get("title"),
         "goal": payload.get("goal"),
         "task_shape": task_shape,
-        "route": route_result.get("route"),
+        "route": route,
+        "route_explanation": explain_route(task_shape, route),
         "final_status": route_result.get("final_status", "DONE"),
+        "normalized_status": normalize_outer_status(route_result),
         "summary": packet.get("summary", ""),
         "task_result_packet": packet,
         "writeback_hint": route_result.get("writeback_hint") or {"level": 0, "targets": []},
+        "writeback_policy": build_writeback_policy(route_result),
         "degrade_history": route_result.get("degrade_history") or [],
         "sendback_count": int(route_result.get("sendback_count") or 0),
         "artifact_lifecycle": route_result.get("artifact_lifecycle") or [],

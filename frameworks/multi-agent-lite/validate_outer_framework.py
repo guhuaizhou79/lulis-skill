@@ -44,6 +44,8 @@ def main() -> None:
         direct_result = run_outer_framework(test_root, direct_payload)
         _assert(direct_result.get("route") == "direct", "direct task should stay on direct route")
         _assert(direct_result.get("final_status") == "DONE", "direct route should finish as DONE")
+        _assert(direct_result.get("normalized_status") == "completed", "direct route should normalize to completed")
+        _assert(direct_result.get("route_explanation"), "direct route should include route explanation")
 
         light_payload = {
             "title": "small structured pass",
@@ -55,6 +57,7 @@ def main() -> None:
         light_result = run_outer_framework(test_root, light_payload)
         _assert(light_result.get("route") == "light_role_check", "general lightweight task should go to light_role_check")
         _assert(light_result.get("final_status") == "DONE", "light route should finish as DONE")
+        _assert(light_result.get("normalized_status") == "completed", "light route should normalize to completed")
 
         staged_payload = {
             "title": "staged automation",
@@ -71,23 +74,34 @@ def main() -> None:
         _assert(staged_result.get("route") == "multi_agent_lite", "automation task should route into staged kernel")
         _assert(staged_result.get("task_result_packet"), "staged route should expose task_result_packet")
         _assert(staged_result.get("framework") == "outer_framework_skeleton", "outer framework marker should be present")
+        _assert(staged_result.get("route_explanation"), "staged route should include route explanation")
+        _assert(staged_result.get("normalized_status") in {"completed", "needs_execution_rerun", "needs_replan", "blocked"}, "staged route should expose normalized status")
+        _assert(isinstance(staged_result.get("writeback_policy"), dict), "staged route should expose writeback policy stub")
+        _assert(staged_result.get("writeback_policy", {}).get("advisory_only") is True, "writeback policy should remain advisory only")
 
         _print("outer framework status", {
             "direct": {
                 "route": direct_result.get("route"),
                 "final_status": direct_result.get("final_status"),
+                "normalized_status": direct_result.get("normalized_status"),
                 "summary": direct_result.get("summary"),
+                "route_explanation": direct_result.get("route_explanation"),
             },
             "light": {
                 "route": light_result.get("route"),
                 "final_status": light_result.get("final_status"),
+                "normalized_status": light_result.get("normalized_status"),
                 "summary": light_result.get("summary"),
+                "route_explanation": light_result.get("route_explanation"),
             },
             "staged": {
                 "route": staged_result.get("route"),
                 "final_status": staged_result.get("final_status"),
+                "normalized_status": staged_result.get("normalized_status"),
                 "summary": staged_result.get("summary"),
+                "route_explanation": staged_result.get("route_explanation"),
                 "task_shape": staged_result.get("task_shape"),
+                "writeback_policy": staged_result.get("writeback_policy"),
             },
         })
         print("\nALL_CHECKS_PASSED")
