@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List
+from uuid import uuid4
+from datetime import datetime, timezone
+import json
 import sys
 
 
@@ -14,6 +17,22 @@ from outer_adapter import choose_route, run_adapter
 
 DIRECT_TASK_TYPES = {"choice_answering", "path_lookup", "fact_lookup"}
 LIGHT_TASK_TYPES = {"general", "config_authoring"}
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _outer_runtime_dir(root: Path) -> Path:
+    path = root / "runtime" / "outer"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _append_registry_row(root: Path, row: Dict[str, Any]) -> None:
+    path = _outer_runtime_dir(root) / "registry.jsonl"
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -130,11 +149,12 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any]) -> Dict[str, Any]:
+def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any]) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
     return {
         "framework": "outer_framework_skeleton",
+        "run_id": run_trace.get("run_id"),
         "title": payload.get("title"),
         "goal": payload.get("goal"),
         "task_shape": task_shape,
@@ -149,13 +169,17 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "degrade_history": route_result.get("degrade_history") or [],
         "sendback_count": int(route_result.get("sendback_count") or 0),
         "artifact_lifecycle": route_result.get("artifact_lifecycle") or [],
+        "run_trace": run_trace,
         "raw_task": route_result.get("raw_task"),
     }
 
 
 def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
+    run_id = f"OUTER-{uuid4().hex[:10].upper()}"
+    started_at = _utc_now()
     task_shape = classify_task_shape(payload)
     route = choose_route(payload)
+    route_explanation = explain_route(task_shape, route)
 
     if route == "direct":
         route_result = _run_direct(payload)
@@ -164,4 +188,19 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         route_result = run_adapter(root, payload)
 
-    return converge_outer_result(payload, route_result, task_shape)
+    finished_at = _utc_now()
+    run_trace = {
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "route": route,
+        "route_explanation": route_explanation,
+        "title": payload.get("title"),
+        "task_type": payload.get("task_type"),
+        "final_status": route_result.get("final_status", "DONE"),
+        "normalized_status": normalize_outer_status(route_result),
+        "task_id": (route_result.get("raw_task") or {}).get("task_id") if isinstance(route_result.get("raw_task"), dict) else route_result.get("task_id"),
+    }
+    _append_registry_row(root, run_trace)
+
+    return converge_outer_result(payload, route_result, task_shape, run_trace)

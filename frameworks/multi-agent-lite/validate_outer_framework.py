@@ -46,6 +46,8 @@ def main() -> None:
         _assert(direct_result.get("final_status") == "DONE", "direct route should finish as DONE")
         _assert(direct_result.get("normalized_status") == "completed", "direct route should normalize to completed")
         _assert(direct_result.get("route_explanation"), "direct route should include route explanation")
+        _assert(direct_result.get("run_id"), "direct route should expose run_id")
+        _assert(isinstance(direct_result.get("run_trace"), dict), "direct route should expose run_trace")
 
         light_payload = {
             "title": "small structured pass",
@@ -78,6 +80,14 @@ def main() -> None:
         _assert(staged_result.get("normalized_status") in {"completed", "needs_execution_rerun", "needs_replan", "blocked"}, "staged route should expose normalized status")
         _assert(isinstance(staged_result.get("writeback_policy"), dict), "staged route should expose writeback policy stub")
         _assert(staged_result.get("writeback_policy", {}).get("advisory_only") is True, "writeback policy should remain advisory only")
+        _assert(staged_result.get("run_id"), "staged route should expose run_id")
+        _assert(isinstance(staged_result.get("run_trace"), dict), "staged route should expose run_trace")
+
+        registry_path = test_root / "runtime" / "outer" / "registry.jsonl"
+        _assert(registry_path.exists(), "outer registry should be materialized on disk")
+        rows = [json.loads(line) for line in registry_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        _assert(len(rows) >= 3, "outer registry should record each run")
+        _assert(any(row.get("run_id") == staged_result.get("run_id") for row in rows), "registry should include staged run trace")
 
         _print("outer framework status", {
             "direct": {
@@ -86,6 +96,7 @@ def main() -> None:
                 "normalized_status": direct_result.get("normalized_status"),
                 "summary": direct_result.get("summary"),
                 "route_explanation": direct_result.get("route_explanation"),
+                "run_id": direct_result.get("run_id"),
             },
             "light": {
                 "route": light_result.get("route"),
@@ -93,6 +104,7 @@ def main() -> None:
                 "normalized_status": light_result.get("normalized_status"),
                 "summary": light_result.get("summary"),
                 "route_explanation": light_result.get("route_explanation"),
+                "run_id": light_result.get("run_id"),
             },
             "staged": {
                 "route": staged_result.get("route"),
@@ -102,7 +114,10 @@ def main() -> None:
                 "route_explanation": staged_result.get("route_explanation"),
                 "task_shape": staged_result.get("task_shape"),
                 "writeback_policy": staged_result.get("writeback_policy"),
+                "run_id": staged_result.get("run_id"),
             },
+            "registry_path": str(registry_path),
+            "registry_rows": rows,
         })
         print("\nALL_CHECKS_PASSED")
     finally:
