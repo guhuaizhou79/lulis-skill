@@ -54,6 +54,36 @@ class Orchestrator:
                 return mock
         return mock
 
+    def _select_orchestration_mode(self, task_type: str, priority: str, acceptance: list[str]) -> str:
+        if priority in {"high", "critical"} or task_type in {"automation", "framework_design"}:
+            return "full"
+        if acceptance:
+            return "compact"
+        return "minimal"
+
+    def _apply_degrade(self, task: Dict[str, Any], reason: str) -> Dict[str, Any]:
+        current = str(task.get("orchestration_mode") or "full")
+        next_mode = {
+            "full": "compact",
+            "compact": "minimal",
+            "minimal": "minimal",
+        }.get(current, "compact")
+        task["orchestration_mode"] = next_mode
+        task.setdefault("degrade_history", []).append({
+            "from": current,
+            "to": next_mode,
+            "reason": reason,
+        })
+        return task
+
+    def _build_review_augmented_result(self, task: Dict[str, Any], review: Dict[str, Any]) -> Dict[str, Any]:
+        packet = dict(task.get("task_result_packet") or {})
+        packet["review_verdict"] = review.get("decision")
+        packet["review_reasons"] = review.get("reasons", [])
+        packet["delivery_status"] = review.get("delivery_status", task.get("delivery_status", "unknown"))
+        packet["recommended_sendback_target"] = review.get("recommended_sendback_target", "none")
+        return packet
+
     def create_task(
         self,
         title: str,
@@ -63,6 +93,7 @@ class Orchestrator:
         constraints: list[str] | None = None,
         acceptance: list[str] | None = None,
     ) -> Dict[str, Any]:
+        acceptance = acceptance or []
         task = {
             "task_id": f"TASK-{uuid4().hex[:8].upper()}",
             "title": title,
@@ -72,7 +103,7 @@ class Orchestrator:
             "task_type": task_type,
             "priority": priority,
             "constraints": constraints or [],
-            "acceptance": acceptance or [],
+            "acceptance": acceptance,
             "context_refs": [],
             "subtasks": [],
             "dispatch_summary": {},
@@ -80,6 +111,16 @@ class Orchestrator:
             "deliverables": [],
             "delivery_summary": "",
             "delivery_status": "not_started",
+            "orchestration_mode": self._select_orchestration_mode(task_type, priority, acceptance),
+            "execution_budget": {
+                "max_context_items": 8,
+                "max_evidence_refs": 5,
+                "max_sendback_rounds": 2,
+            },
+            "sendback_count": 0,
+            "degrade_history": [],
+            "writeback_hint": {"level": 0, "targets": []},
+            "task_result_packet": None,
             "history": [],
             "reviews": [],
         }
@@ -121,7 +162,7 @@ class Orchestrator:
         task = self.store.load(task_id)
         if not task.get("subtasks"):
             raise ValueError("cannot dispatch without subtasks")
-        dispatched = [self.dispatcher.assign(st) for st in task["subtasks"]]
+        dispatched = [self.dispatcher.assign(st, task) for st in task["subtasks"]]
         task["subtasks"] = dispatched
         task["dispatch_summary"] = summarize_dispatches(dispatched)
         if task["status"] in {"PLAN", "NEW"}:
@@ -183,7 +224,15 @@ class Orchestrator:
             "next_action": review["next_action"],
         })
         prev = task["status"]
-        target = "DONE" if review["decision"] == "approved" else "PLAN"
+        if review["decision"] == "approved":
+            target = "DONE"
+        else:
+            task["sendback_count"] = int(task.get("sendback_count", 0)) + 1
+            max_rounds = int((task.get("execution_budget") or {}).get("max_sendback_rounds", 2))
+            if task["sendback_count"] >= max_rounds:
+                task = self._apply_degrade(task, reason="sendback threshold reached")
+            target = "PLAN"
+        task["task_result_packet"] = self._build_review_augmented_result(task, review)
         assert_transition(prev, target)
         task["status"] = target
         self.store.append_history(task, {
@@ -193,6 +242,4 @@ class Orchestrator:
             "note": "review outcome applied",
         })
         self.store.save(task)
-        return task
-
         return task

@@ -31,7 +31,12 @@
       "objective_echo",
       "acceptance_checks",
       "needs_input",
-      "completion_basis"
+      "completion_basis",
+      "handoff_ready_summary",
+      "deliverable_strength",
+      "result_confidence",
+      "evidence_refs",
+      "writeback_recommendation"
     ],
     "soft_optional": [
       "assumptions",
@@ -50,9 +55,14 @@
     "semantic_error": { "type": "boolean" },
     "raw_excerpt": { "type": "string" },
     "objective_echo": { "type": "string" },
+    "handoff_ready_summary": { "type": "string" },
+    "deliverable_strength": { "type": "string", "enum": ["strong", "weak", "none"] },
+    "result_confidence": { "type": "string", "enum": ["high", "medium", "low"] },
     "assumptions": { "type": "array", "items": { "type": "string" } },
     "needs_input": { "type": "array", "items": { "type": "string" } },
     "completion_basis": { "type": "array", "items": { "type": "string" } },
+    "evidence_refs": { "type": "array", "items": { "type": "string" } },
+    "writeback_recommendation": { "type": "object" },
     "acceptance_checks": {
       "type": "array",
       "items": {

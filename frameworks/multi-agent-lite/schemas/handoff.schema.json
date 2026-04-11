@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Handoff",
+  "type": "object",
+  "required": [
+    "goal",
+    "input_scope",
+    "constraints",
+    "acceptance_focus",
+    "evidence_refs",
+    "output_contract",
+    "budget"
+  ],
+  "properties": {
+    "goal": { "type": "string" },
+    "input_scope": { "type": "array", "items": { "type": "string" } },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "acceptance_focus": { "type": "array", "items": { "type": "string" } },
+    "evidence_refs": { "type": "array", "items": { "type": "string" } },
+    "output_contract": { "type": "string" },
+    "budget": {
+      "type": "object",
+      "required": ["max_context_items", "max_evidence_refs"],
+      "properties": {
+        "max_context_items": { "type": "integer", "minimum": 1 },
+        "max_evidence_refs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

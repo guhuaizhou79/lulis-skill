@@ -21,9 +21,16 @@
     "delivery_changes": { "type": "array", "items": { "type": "string" } },
     "delivery_risks": { "type": "array", "items": { "type": "string" } },
     "delivery_evidence": { "type": "array", "items": { "type": "object" } },
+    "delivery_internal_evidence": { "type": "array", "items": { "type": "object" } },
     "delivery_summary": { "type": "string" },
     "delivery_status": { "type": "string", "enum": ["not_started", "assembled", "delivered", "not_delivered", "unknown"] },
     "planning_profile": { "type": "string", "enum": ["direct_review", "research_execute_review", "research_execute_review_strict"] },
+    "orchestration_mode": { "type": "string", "enum": ["full", "compact", "minimal"] },
+    "execution_budget": { "type": "object" },
+    "sendback_count": { "type": "integer", "minimum": 0 },
+    "degrade_history": { "type": "array", "items": { "type": "object" } },
+    "writeback_hint": { "type": "object" },
+    "task_result_packet": { "type": ["object", "null"] },
     "history": { "type": "array", "items": { "type": "object" } }
   },
   "additionalProperties": true

@@ -18,6 +18,45 @@ def _unique(items: List[str]) -> List[str]:
     return out
 
 
+def _pick_evidence_refs(evidence_map: List[Dict[str, Any]], max_refs: int = 5) -> List[str]:
+    refs: List[str] = []
+    for item in evidence_map:
+        subtask_id = str(item.get("subtask_id") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        if subtask_id and summary:
+            refs.append(f"{subtask_id}: {summary[:120]}")
+        for artifact in item.get("artifacts") or []:
+            refs.append(str(artifact))
+        if len(refs) >= max_refs:
+            break
+    return _unique(refs)[:max_refs]
+
+
+def _collect_needs_input(subtasks: List[Dict[str, Any]]) -> List[str]:
+    needs: List[str] = []
+    for st in subtasks:
+        result = st.get("result") or {}
+        for item in result.get("needs_input") or []:
+            value = str(item or "").strip()
+            if value:
+                needs.append(value)
+    return _unique(needs)
+
+
+def _derive_result_status(task: Dict[str, Any], needs_input: List[str]) -> str:
+    if needs_input:
+        return "blocked"
+    if task.get("delivery_status") == "delivered":
+        return "success"
+    if task.get("delivery_status") in {"assembled", "not_delivered"}:
+        return "changes_requested"
+    return "blocked"
+
+
+def _build_writeback_recommendation(task: Dict[str, Any]) -> Dict[str, Any]:
+    return task.get("writeback_hint") or {"level": 0, "targets": []}
+
+
 def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
     subtasks: List[Dict[str, Any]] = task.get("subtasks", []) or []
 
@@ -74,12 +113,27 @@ def synthesize_delivery(task: Dict[str, Any]) -> Dict[str, Any]:
         deliverables = delivery_changes[:3]
 
     delivery_status = "assembled" if (deliverables or delivery_summary or delivery_changes) else "not_delivered"
+    if delivery_summary and deliverables:
+        delivery_status = "delivered"
+
+    needs_input = _collect_needs_input(subtasks)
 
     task["deliverables"] = deliverables
     task["delivery_summary"] = delivery_summary
     task["delivery_changes"] = delivery_changes
     task["delivery_risks"] = _unique(residual_risks)
     task["delivery_evidence"] = evidence_map
+    task["delivery_internal_evidence"] = evidence_map
     task["deliverable_candidates"] = deliverable_candidates
     task["delivery_status"] = delivery_status
+    task["task_result_packet"] = {
+        "status": _derive_result_status(task, needs_input),
+        "summary": delivery_summary,
+        "deliverables": deliverables,
+        "changes": delivery_changes,
+        "risks": task["delivery_risks"],
+        "needs_input": needs_input,
+        "evidence_refs": _pick_evidence_refs(evidence_map),
+        "writeback_recommendation": _build_writeback_recommendation(task),
+    }
     return task
