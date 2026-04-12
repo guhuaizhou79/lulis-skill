@@ -31,7 +31,8 @@ def main() -> None:
     temp_dir = Path(tempfile.mkdtemp(prefix="multi-agent-lite-coding-executor-verify-"))
     repo_root = temp_dir / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
-    (repo_root / "README.md").write_text("# sample repo\n", encoding="utf-8")
+    readme = repo_root / "README.md"
+    readme.write_text("# sample repo\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
 
     try:
@@ -48,6 +49,9 @@ def main() -> None:
             "validation_expectations": [
                 "document validation path",
             ],
+            "allowed_actions": ["read", "append", "validate"],
+            "append_text": "<!-- controlled append marker -->",
+            "files_of_interest": ["README.md"],
         }
         result = executor.execute(payload)
         _assert(result.get("status") == "success", "coding executor should succeed for a valid repo task")
@@ -56,6 +60,10 @@ def main() -> None:
         _assert(isinstance(result.get("repo_scan"), dict) and result.get("repo_scan"), "coding executor should expose repo_scan")
         _assert(isinstance(result.get("target_files"), list) and result.get("target_files"), "coding executor should expose target_files")
         _assert(isinstance(result.get("edit_plan"), list) and result.get("edit_plan"), "coding executor should expose edit_plan")
+        _assert(isinstance(result.get("draft_artifacts"), list) and result.get("draft_artifacts"), "coding executor should expose draft artifacts")
+        _assert(Path(result.get("draft_artifacts")[0]).exists(), "coding executor draft artifact should exist")
+        _assert(isinstance(result.get("files_changed"), list) and result.get("files_changed"), "coding executor should perform controlled append change")
+        _assert("controlled append marker" in readme.read_text(encoding="utf-8"), "controlled append marker should be written to target file")
 
         materialized = materialize_coding_run(temp_dir, payload)
         _assert(Path(materialized.get("artifact")).exists(), "coding executor should materialize runtime artifact")

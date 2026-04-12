@@ -27,6 +27,7 @@ def build_empty_coding_result(packet: Dict[str, Any], reason: str) -> Dict[str, 
         "deliverables": [],
         "repo_scan": {},
         "edit_plan": [],
+        "draft_artifacts": [],
         "tests_run": [],
         "test_results": [],
         "risks": [],
@@ -36,7 +37,7 @@ def build_empty_coding_result(packet: Dict[str, Any], reason: str) -> Dict[str, 
     }
 
 
-def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_changed: List[str] | None = None, target_files: List[str] | None = None, deliverables: List[str] | None = None, repo_scan: Dict[str, Any] | None = None, edit_plan: List[Dict[str, Any]] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None, recommended_next_step: str = "") -> Dict[str, Any]:
+def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_changed: List[str] | None = None, target_files: List[str] | None = None, deliverables: List[str] | None = None, repo_scan: Dict[str, Any] | None = None, edit_plan: List[Dict[str, Any]] | None = None, draft_artifacts: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None, recommended_next_step: str = "") -> Dict[str, Any]:
     blockers = [str(x) for x in (blockers or []) if str(x).strip()]
     needs_input = [str(x) for x in (needs_input or []) if str(x).strip()]
     status = "success"
@@ -51,6 +52,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         "deliverables": [str(x) for x in (deliverables or []) if str(x).strip()],
         "repo_scan": dict(repo_scan or {}),
         "edit_plan": list(edit_plan or []),
+        "draft_artifacts": [str(x) for x in (draft_artifacts or []) if str(x).strip()],
         "tests_run": [str(x) for x in (tests_run or []) if str(x).strip()],
         "test_results": [str(x) for x in (test_results or []) if str(x).strip()],
         "risks": [str(x) for x in (risks or []) if str(x).strip()],

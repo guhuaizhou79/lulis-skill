@@ -64,8 +64,78 @@ class CodingExecutor:
             })
         return plan
 
+    def _read_preview(self, repo: Path, rel: str, max_chars: int = 600) -> str:
+        full = repo / rel
+        if not full.exists() or not full.is_file():
+            return ""
+        try:
+            text = full.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return "<binary-or-non-utf8>"
+        return text[:max_chars]
+
+    def _materialize_draft_artifacts(self, repo: Path, packet: Dict[str, Any], edit_plan: List[Dict[str, Any]]) -> List[str]:
+        runtime_dir = self.root / "runtime" / "coding-executor" / "drafts"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        goal = str(packet.get("goal") or "").strip()
+        title = str(packet.get("title") or "coding-task").replace(" ", "-").lower()[:50]
+        artifacts: List[str] = []
+        for idx, item in enumerate(edit_plan, start=1):
+            rel = str(item.get("file") or "").strip()
+            if not rel:
+                continue
+            preview = self._read_preview(repo, rel)
+            artifact = runtime_dir / f"{title}-{idx:02d}.md"
+            artifact.write_text(
+                "\n".join([
+                    f"# Draft edit plan for {rel}",
+                    "",
+                    f"Goal: {goal}",
+                    f"Intent: {item.get('intent')}",
+                    f"Mode: {item.get('mode')}",
+                    "",
+                    "## Current preview",
+                    "```",
+                    preview,
+                    "```",
+                    "",
+                    "## Proposed change note",
+                    f"Prepare a targeted modification for `{rel}` aligned with the task goal above.",
+                ]),
+                encoding="utf-8",
+            )
+            artifacts.append(str(artifact))
+        return artifacts
+
+    def _apply_append_change(self, repo: Path, packet: Dict[str, Any], target_files: List[str]) -> tuple[List[str], List[str], List[str]]:
+        allowed_actions = {str(x).strip() for x in (packet.get("allowed_actions") or []) if str(x).strip()}
+        append_text = str(packet.get("append_text") or "")
+        files_changed: List[str] = []
+        tests_run: List[str] = []
+        test_results: List[str] = []
+        if "append" not in allowed_actions or not append_text or not target_files:
+            return files_changed, tests_run, test_results
+
+        rel = target_files[0]
+        full = repo / rel
+        if not full.exists() or not full.is_file():
+            return files_changed, tests_run, test_results
+
+        original = full.read_text(encoding="utf-8")
+        if append_text not in original:
+            sep = "" if original.endswith("\n") else "\n"
+            full.write_text(original + sep + append_text, encoding="utf-8")
+            files_changed.append(str(full))
+            tests_run.append(f"file append applied: {rel}")
+            test_results.append("passed")
+        else:
+            tests_run.append(f"file append skipped (already present): {rel}")
+            test_results.append("passed")
+        return files_changed, tests_run, test_results
+
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         packet = build_coding_task_packet(payload)
+        packet["append_text"] = payload.get("append_text") or ""
         repo = self._normalize_repo_path(packet.get("repo_path") or "")
         goal = str(packet.get("goal") or "").strip()
 
@@ -77,6 +147,7 @@ class CodingExecutor:
         repo_scan = self._scan_repo(repo)
         target_files = self._candidate_files(repo, packet)
         edit_plan = self._build_edit_plan(packet, target_files)
+        draft_artifacts = self._materialize_draft_artifacts(repo, packet, edit_plan)
         deliverables: List[str] = []
         for rel in target_files:
             full = repo / rel
@@ -92,20 +163,30 @@ class CodingExecutor:
         if not target_files:
             risks.append("no target files selected yet")
 
+        files_changed, apply_tests, apply_results = self._apply_append_change(repo, packet, target_files)
+        if files_changed:
+            summary = f"coding executor applied controlled append change for: {packet['title']}"
+            tests_run.extend(apply_tests)
+            test_results.extend(apply_results)
+        else:
+            tests_run.extend(apply_tests)
+            test_results.extend(apply_results)
+
         result = build_coding_result_packet(
             packet,
             summary=summary,
-            files_changed=[],
+            files_changed=files_changed,
             target_files=target_files,
             deliverables=deliverables,
             repo_scan=repo_scan,
             edit_plan=edit_plan,
+            draft_artifacts=draft_artifacts,
             tests_run=tests_run,
             test_results=test_results,
             risks=risks,
             blockers=[],
             needs_input=[],
-            recommended_next_step="manager may now choose target files and approve a real edit/apply/validate loop",
+            recommended_next_step="manager may now review changed files or extend executor beyond controlled append mode",
         )
         return result
 
