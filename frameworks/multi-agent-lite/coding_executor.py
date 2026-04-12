@@ -133,9 +133,48 @@ class CodingExecutor:
             test_results.append("passed")
         return files_changed, tests_run, test_results
 
+    def _apply_replace_change(self, repo: Path, packet: Dict[str, Any], target_files: List[str]) -> tuple[List[str], List[str], List[str], List[str]]:
+        allowed_actions = {str(x).strip() for x in (packet.get("allowed_actions") or []) if str(x).strip()}
+        replace_old = str(packet.get("replace_old") or "")
+        replace_new = str(packet.get("replace_new") or "")
+        files_changed: List[str] = []
+        tests_run: List[str] = []
+        test_results: List[str] = []
+        risks: List[str] = []
+        if "replace" not in allowed_actions or not replace_old or not target_files:
+            return files_changed, tests_run, test_results, risks
+
+        rel = target_files[0]
+        full = repo / rel
+        if not full.exists() or not full.is_file():
+            return files_changed, tests_run, test_results, risks
+
+        original = full.read_text(encoding="utf-8")
+        hits = original.count(replace_old)
+        if hits == 0:
+            tests_run.append(f"file replace skipped (old text not found): {rel}")
+            test_results.append("passed")
+            risks.append("replace_old not found; no change applied")
+            return files_changed, tests_run, test_results, risks
+        if hits > 1:
+            tests_run.append(f"file replace blocked (multiple matches): {rel}")
+            test_results.append("blocked")
+            risks.append("replace_old matched multiple times; exact replace not applied")
+            return files_changed, tests_run, test_results, risks
+
+        updated = original.replace(replace_old, replace_new, 1)
+        if updated != original:
+            full.write_text(updated, encoding="utf-8")
+            files_changed.append(str(full))
+            tests_run.append(f"file replace applied: {rel}")
+            test_results.append("passed")
+        return files_changed, tests_run, test_results, risks
+
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         packet = build_coding_task_packet(payload)
         packet["append_text"] = payload.get("append_text") or ""
+        packet["replace_old"] = payload.get("replace_old") or ""
+        packet["replace_new"] = payload.get("replace_new") or ""
         repo = self._normalize_repo_path(packet.get("repo_path") or "")
         goal = str(packet.get("goal") or "").strip()
 
@@ -164,13 +203,20 @@ class CodingExecutor:
             risks.append("no target files selected yet")
 
         files_changed, apply_tests, apply_results = self._apply_append_change(repo, packet, target_files)
+        replace_changed, replace_tests, replace_results, replace_risks = self._apply_replace_change(repo, packet, target_files)
+        files_changed.extend([x for x in replace_changed if x not in files_changed])
+        risks.extend(replace_risks)
         if files_changed:
-            summary = f"coding executor applied controlled append change for: {packet['title']}"
+            summary = f"coding executor applied controlled file change for: {packet['title']}"
             tests_run.extend(apply_tests)
             test_results.extend(apply_results)
+            tests_run.extend(replace_tests)
+            test_results.extend(replace_results)
         else:
             tests_run.extend(apply_tests)
             test_results.extend(apply_results)
+            tests_run.extend(replace_tests)
+            test_results.extend(replace_results)
 
         result = build_coding_result_packet(
             packet,

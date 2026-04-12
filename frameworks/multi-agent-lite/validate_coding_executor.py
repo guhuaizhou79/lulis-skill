@@ -32,7 +32,7 @@ def main() -> None:
     repo_root = temp_dir / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     readme = repo_root / "README.md"
-    readme.write_text("# sample repo\n", encoding="utf-8")
+    readme.write_text("# sample repo\nhello old world\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
 
     try:
@@ -49,8 +49,10 @@ def main() -> None:
             "validation_expectations": [
                 "document validation path",
             ],
-            "allowed_actions": ["read", "append", "validate"],
+            "allowed_actions": ["read", "append", "replace", "validate"],
             "append_text": "<!-- controlled append marker -->",
+            "replace_old": "hello old world",
+            "replace_new": "hello new world",
             "files_of_interest": ["README.md"],
         }
         result = executor.execute(payload)
@@ -62,8 +64,10 @@ def main() -> None:
         _assert(isinstance(result.get("edit_plan"), list) and result.get("edit_plan"), "coding executor should expose edit_plan")
         _assert(isinstance(result.get("draft_artifacts"), list) and result.get("draft_artifacts"), "coding executor should expose draft artifacts")
         _assert(Path(result.get("draft_artifacts")[0]).exists(), "coding executor draft artifact should exist")
-        _assert(isinstance(result.get("files_changed"), list) and result.get("files_changed"), "coding executor should perform controlled append change")
-        _assert("controlled append marker" in readme.read_text(encoding="utf-8"), "controlled append marker should be written to target file")
+        _assert(isinstance(result.get("files_changed"), list) and result.get("files_changed"), "coding executor should perform controlled file change")
+        updated = readme.read_text(encoding="utf-8")
+        _assert("controlled append marker" in updated, "controlled append marker should be written to target file")
+        _assert("hello new world" in updated, "controlled replace should be written to target file")
 
         materialized = materialize_coding_run(temp_dir, payload)
         _assert(Path(materialized.get("artifact")).exists(), "coding executor should materialize runtime artifact")
