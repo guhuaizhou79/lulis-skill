@@ -193,10 +193,16 @@
 - 仍然保持 outer final authority
 
 ### S2-3：direct / light path strengthening
-如果后续真的要把 outer shell 变成更完整主框架，再考虑：
-- direct executor contract
-- light role-check executor contract
-- richer route policy
+当前已开始进入这一步，且第一段已落地：
+- `direct` route 现在也产出完整的 `task_result_packet`
+- `light_role_check` route 现在也产出完整的 `task_result_packet`
+- 两条路径都补上了 `raw_task` snapshot
+- 三条 route（direct / light / staged）当前 outer result 面已更一致
+
+本阶段剩余可继续补强的方向：
+- direct / light 的 richer route policy
+- 更细的 acceptance / risk / evidence 约定
+- 与后续 CI / command surface 的衔接
 
 ### S2-4：CI / command surface
 最后再收：

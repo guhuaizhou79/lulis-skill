@@ -48,6 +48,9 @@ def main() -> None:
         _assert(direct_result.get("route_explanation"), "direct route should include route explanation")
         _assert(direct_result.get("run_id"), "direct route should expose run_id")
         _assert(isinstance(direct_result.get("run_trace"), dict), "direct route should expose run_trace")
+        _assert(isinstance(direct_result.get("task_result_packet"), dict), "direct route should expose task_result_packet")
+        _assert(isinstance(direct_result.get("raw_task"), dict), "direct route should expose raw_task snapshot")
+        _assert(direct_result.get("raw_task", {}).get("orchestration_mode") == "direct", "direct raw task should record orchestration mode")
 
         light_payload = {
             "title": "small structured pass",
@@ -60,6 +63,9 @@ def main() -> None:
         _assert(light_result.get("route") == "light_role_check", "general lightweight task should go to light_role_check")
         _assert(light_result.get("final_status") == "DONE", "light route should finish as DONE")
         _assert(light_result.get("normalized_status") == "completed", "light route should normalize to completed")
+        _assert(isinstance(light_result.get("task_result_packet"), dict), "light route should expose task_result_packet")
+        _assert(isinstance(light_result.get("raw_task"), dict), "light route should expose raw_task snapshot")
+        _assert(light_result.get("raw_task", {}).get("orchestration_mode") == "light_role_check", "light raw task should record orchestration mode")
 
         staged_payload = {
             "title": "staged automation",
@@ -80,6 +86,12 @@ def main() -> None:
         _assert(staged_result.get("normalized_status") in {"completed", "needs_execution_rerun", "needs_replan", "blocked"}, "staged route should expose normalized status")
         _assert(isinstance(staged_result.get("writeback_policy"), dict), "staged route should expose writeback policy stub")
         _assert(staged_result.get("writeback_policy", {}).get("advisory_only") is True, "writeback policy should remain advisory only")
+        _assert(isinstance(staged_result.get("writeback_plan"), dict), "staged route should expose writeback plan")
+        _assert(staged_result.get("writeback_plan", {}).get("advisory_only") is True, "writeback plan should remain advisory only")
+        _assert(isinstance(staged_result.get("writeback_stub"), dict), "staged route should expose writeback stub artifact")
+        _assert(staged_result.get("writeback_stub", {}).get("path"), "writeback stub should expose materialized path")
+        _assert(Path(staged_result.get("writeback_stub", {}).get("path")).exists(), "writeback stub artifact should exist on disk")
+        _assert(Path(staged_result.get("writeback_stub", {}).get("registry")).exists(), "writeback registry should exist on disk")
         _assert(staged_result.get("run_id"), "staged route should expose run_id")
         _assert(isinstance(staged_result.get("run_trace"), dict), "staged route should expose run_trace")
 
@@ -96,6 +108,8 @@ def main() -> None:
                 "normalized_status": direct_result.get("normalized_status"),
                 "summary": direct_result.get("summary"),
                 "route_explanation": direct_result.get("route_explanation"),
+                "task_result_packet": direct_result.get("task_result_packet"),
+                "raw_task": direct_result.get("raw_task"),
                 "run_id": direct_result.get("run_id"),
             },
             "light": {
@@ -104,6 +118,8 @@ def main() -> None:
                 "normalized_status": light_result.get("normalized_status"),
                 "summary": light_result.get("summary"),
                 "route_explanation": light_result.get("route_explanation"),
+                "task_result_packet": light_result.get("task_result_packet"),
+                "raw_task": light_result.get("raw_task"),
                 "run_id": light_result.get("run_id"),
             },
             "staged": {
@@ -114,6 +130,8 @@ def main() -> None:
                 "route_explanation": staged_result.get("route_explanation"),
                 "task_shape": staged_result.get("task_shape"),
                 "writeback_policy": staged_result.get("writeback_policy"),
+                "writeback_plan": staged_result.get("writeback_plan"),
+                "writeback_stub": staged_result.get("writeback_stub"),
                 "run_id": staged_result.get("run_id"),
             },
             "registry_path": str(registry_path),

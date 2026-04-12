@@ -13,10 +13,66 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
 from outer_adapter import choose_route, run_adapter
+from writeback_stub import build_writeback_plan, materialize_writeback_stub
 
 
 DIRECT_TASK_TYPES = {"choice_answering", "path_lookup", "fact_lookup"}
 LIGHT_TASK_TYPES = {"general", "config_authoring"}
+
+
+def _default_task_result_packet(summary: str, *, changes: List[str] | None = None, risks: List[str] | None = None, needs_input: List[str] | None = None, writeback_level: int = 0, writeback_targets: List[str] | None = None) -> Dict[str, Any]:
+    return {
+        "status": "success" if not (needs_input or []) else "blocked",
+        "summary": summary,
+        "deliverables": [],
+        "changes": list(changes or []),
+        "risks": list(risks or []),
+        "needs_input": list(needs_input or []),
+        "evidence_refs": [],
+        "writeback_recommendation": {
+            "level": writeback_level,
+            "targets": list(writeback_targets or []),
+        },
+    }
+
+
+def _build_direct_raw_task(payload: Dict[str, Any], summary: str) -> Dict[str, Any]:
+    return {
+        "task_id": None,
+        "route": "direct",
+        "title": payload.get("title"),
+        "goal": payload.get("goal"),
+        "task_type": payload.get("task_type"),
+        "priority": payload.get("priority", "normal"),
+        "status": "DONE",
+        "orchestration_mode": "direct",
+        "task_result_packet": _default_task_result_packet(summary),
+        "writeback_hint": {"level": 0, "targets": []},
+        "degrade_history": [],
+        "sendback_count": 0,
+        "artifact_lifecycle": [],
+    }
+
+
+def _build_light_raw_task(payload: Dict[str, Any], summary: str) -> Dict[str, Any]:
+    return {
+        "task_id": None,
+        "route": "light_role_check",
+        "title": payload.get("title"),
+        "goal": payload.get("goal"),
+        "task_type": payload.get("task_type"),
+        "priority": payload.get("priority", "normal"),
+        "status": "DONE",
+        "orchestration_mode": "light_role_check",
+        "task_result_packet": _default_task_result_packet(
+            summary,
+            changes=["performed lightweight structured pass"],
+        ),
+        "writeback_hint": {"level": 0, "targets": []},
+        "degrade_history": [],
+        "sendback_count": 0,
+        "artifact_lifecycle": [],
+    }
 
 
 def _utc_now() -> str:
@@ -105,51 +161,35 @@ def build_writeback_policy(route_result: Dict[str, Any]) -> Dict[str, Any]:
 
 def _run_direct(payload: Dict[str, Any]) -> Dict[str, Any]:
     summary = str(payload.get("goal") or payload.get("title") or "direct task")
+    raw_task = _build_direct_raw_task(payload, summary)
     return {
         "route": "direct",
         "final_status": "DONE",
-        "task_result_packet": {
-            "status": "success",
-            "summary": summary,
-            "deliverables": [],
-            "changes": [],
-            "risks": [],
-            "needs_input": [],
-            "evidence_refs": [],
-            "writeback_recommendation": {"level": 0, "targets": []},
-        },
-        "writeback_hint": {"level": 0, "targets": []},
+        "task_result_packet": raw_task["task_result_packet"],
+        "writeback_hint": raw_task["writeback_hint"],
         "degrade_history": [],
         "sendback_count": 0,
         "artifact_lifecycle": [],
-        "raw_task": None,
+        "raw_task": raw_task,
     }
 
 
 def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
     summary = f"light role check completed for: {str(payload.get('title') or payload.get('goal') or 'task')}"
+    raw_task = _build_light_raw_task(payload, summary)
     return {
         "route": "light_role_check",
         "final_status": "DONE",
-        "task_result_packet": {
-            "status": "success",
-            "summary": summary,
-            "deliverables": [],
-            "changes": ["performed lightweight structured pass"],
-            "risks": [],
-            "needs_input": [],
-            "evidence_refs": [],
-            "writeback_recommendation": {"level": 0, "targets": []},
-        },
-        "writeback_hint": {"level": 0, "targets": []},
+        "task_result_packet": raw_task["task_result_packet"],
+        "writeback_hint": raw_task["writeback_hint"],
         "degrade_history": [],
         "sendback_count": 0,
         "artifact_lifecycle": [],
-        "raw_task": None,
+        "raw_task": raw_task,
     }
 
 
-def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any]) -> Dict[str, Any]:
+def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any], writeback_plan: Dict[str, Any], writeback_stub: Dict[str, Any] | None = None) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
     return {
@@ -166,6 +206,8 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "task_result_packet": packet,
         "writeback_hint": route_result.get("writeback_hint") or {"level": 0, "targets": []},
         "writeback_policy": build_writeback_policy(route_result),
+        "writeback_plan": writeback_plan,
+        "writeback_stub": writeback_stub,
         "degrade_history": route_result.get("degrade_history") or [],
         "sendback_count": int(route_result.get("sendback_count") or 0),
         "artifact_lifecycle": route_result.get("artifact_lifecycle") or [],
@@ -202,5 +244,13 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "task_id": (route_result.get("raw_task") or {}).get("task_id") if isinstance(route_result.get("raw_task"), dict) else route_result.get("task_id"),
     }
     _append_registry_row(root, run_trace)
+    writeback_plan = build_writeback_plan({
+        "run_id": run_id,
+        "normalized_status": normalize_outer_status(route_result),
+        "task_result_packet": route_result.get("task_result_packet") or {},
+        "writeback_hint": route_result.get("writeback_hint") or {"level": 0, "targets": []},
+        "writeback_policy": build_writeback_policy(route_result),
+    })
+    writeback_stub = materialize_writeback_stub(root, writeback_plan)
 
-    return converge_outer_result(payload, route_result, task_shape, run_trace)
+    return converge_outer_result(payload, route_result, task_shape, run_trace, writeback_plan, writeback_stub)
