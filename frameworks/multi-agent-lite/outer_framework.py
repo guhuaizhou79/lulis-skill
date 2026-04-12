@@ -306,6 +306,12 @@ def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
     }
 
 
+def _rerun_request_runtime_dir(root: Path) -> Path:
+    path = _outer_runtime_dir(root) / "rerun-requests"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def build_rerun_request(payload: Dict[str, Any], route_result: Dict[str, Any]) -> Dict[str, Any] | None:
     next_payload = route_result.get("next_executor_payload")
     rerun_gate = route_result.get("rerun_gate") or {}
@@ -330,6 +336,28 @@ def build_rerun_request(payload: Dict[str, Any], route_result: Dict[str, Any]) -
             "sendback_count": route_result.get("sendback_count") or 0,
             "normalized_status": normalize_outer_status(route_result),
         },
+    }
+
+
+def consume_rerun_request(root: Path, route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    request = route_result.get("rerun_request")
+    if not isinstance(request, dict):
+        return None
+
+    request_dir = _rerun_request_runtime_dir(root)
+    run_id = str((route_result.get("run_trace") or {}).get("run_id") or uuid4().hex[:10].upper())
+    payload = {
+        "request": request,
+        "consumed_at": _utc_now(),
+        "consume_mode": "dispatch_ready" if request.get("request_mode") == "ready" else "await_manager_review",
+        "status": "ready_for_executor_dispatch" if request.get("request_mode") == "ready" else "awaiting_manager_review",
+    }
+    path = request_dir / f"{run_id}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "path": str(path),
+        "status": payload["status"],
+        "consume_mode": payload["consume_mode"],
     }
 
 
@@ -526,6 +554,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
     next_payload = route_result.get("next_executor_payload")
     rerun_gate = route_result.get("rerun_gate")
     rerun_request = route_result.get("rerun_request")
+    rerun_dispatch = route_result.get("rerun_dispatch")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -546,6 +575,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "next_executor_payload": next_payload,
         "rerun_gate": rerun_gate,
         "rerun_request": rerun_request,
+        "rerun_dispatch": rerun_dispatch,
         "sendback_history": route_result.get("sendback_history") or [],
         "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
@@ -630,11 +660,13 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["next_executor_payload"] = build_next_executor_payload(payload, route_result)
             route_result["rerun_gate"] = build_rerun_gate(route_result)
             route_result["rerun_request"] = build_rerun_request(payload, route_result)
+            route_result["rerun_dispatch"] = consume_rerun_request(root, route_result)
         else:
             route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
             route_result["next_executor_payload"] = None
             route_result["rerun_gate"] = None
             route_result["rerun_request"] = None
+            route_result["rerun_dispatch"] = None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)

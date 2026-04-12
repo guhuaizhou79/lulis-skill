@@ -125,6 +125,9 @@ def main() -> None:
         _assert(failing_result.get("rerun_gate", {}).get("decision") == "allow_rerun", "first narrowed replan should allow rerun")
         _assert(isinstance(failing_result.get("rerun_request"), dict), "eligible rerun should emit rerun request object")
         _assert(failing_result.get("rerun_request", {}).get("request_mode") == "ready", "first rerun request should be ready for executor consumption")
+        _assert(isinstance(failing_result.get("rerun_dispatch"), dict), "ready rerun request should emit dispatch artifact")
+        _assert(failing_result.get("rerun_dispatch", {}).get("status") == "ready_for_executor_dispatch", "first rerun dispatch should be ready for executor dispatch")
+        _assert(Path(failing_result.get("rerun_dispatch", {}).get("path")).exists(), "rerun dispatch artifact should exist on disk")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
@@ -140,6 +143,9 @@ def main() -> None:
         _assert(failing_result_second.get("rerun_gate", {}).get("manager_review_required") is True, "repeated sendback should set manager review gate")
         _assert(isinstance(failing_result_second.get("rerun_request"), dict), "review-gated rerun should still emit formal rerun request")
         _assert(failing_result_second.get("rerun_request", {}).get("request_mode") == "await_manager_review", "repeated sendback rerun request should wait for manager review")
+        _assert(isinstance(failing_result_second.get("rerun_dispatch"), dict), "review-gated rerun should still emit dispatch artifact")
+        _assert(failing_result_second.get("rerun_dispatch", {}).get("status") == "awaiting_manager_review", "review-gated rerun dispatch should await manager review")
+        _assert(Path(failing_result_second.get("rerun_dispatch", {}).get("path")).exists(), "review-gated rerun dispatch artifact should exist on disk")
 
         staged_payload = {
             "title": "staged automation",
@@ -213,6 +219,7 @@ def main() -> None:
                 "next_executor_payload": failing_result.get("next_executor_payload"),
                 "rerun_gate": failing_result.get("rerun_gate"),
                 "rerun_request": failing_result.get("rerun_request"),
+                "rerun_dispatch": failing_result.get("rerun_dispatch"),
                 "sendback_history": failing_result.get("sendback_history"),
                 "sendback_history_path": failing_result.get("sendback_history_path"),
                 "run_id": failing_result.get("run_id"),
@@ -223,6 +230,7 @@ def main() -> None:
                 "next_executor_payload": failing_result_second.get("next_executor_payload"),
                 "rerun_gate": failing_result_second.get("rerun_gate"),
                 "rerun_request": failing_result_second.get("rerun_request"),
+                "rerun_dispatch": failing_result_second.get("rerun_dispatch"),
                 "sendback_history": failing_result_second.get("sendback_history"),
                 "sendback_history_path": failing_result_second.get("sendback_history_path"),
                 "run_id": failing_result_second.get("run_id"),
