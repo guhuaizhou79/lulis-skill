@@ -91,6 +91,8 @@ def main() -> None:
         _assert("unit" in surfaces, "validation records should include unit surface")
         _assert("project_command" in surfaces, "validation records should include project command surface")
         _assert(isinstance(result.get("review_packet", {}).get("validation_records"), list), "review packet should carry validation records")
+        _assert(isinstance(result.get("validation_policy"), dict), "coding result should expose validation policy")
+        _assert(result.get("validation_policy", {}).get("verdict_hint") == "accepted", "successful validation surfaces should hint accepted")
         _assert(result.get("review_packet", {}).get("verdict") == "accepted", "successful coding run should emit accepted review verdict")
         _assert(result.get("review_packet", {}).get("change_scope") == "multi_file", "multi-file coding run should be classified as multi_file")
         _assert(len(result.get("target_files") or []) >= 2, "coding executor should preserve multi-file target list")
@@ -113,8 +115,27 @@ def main() -> None:
         materialized = materialize_coding_run(temp_dir, payload)
         _assert(Path(materialized.get("artifact")).exists(), "coding executor should materialize runtime artifact")
 
+        failing_payload = {
+            "title": "validation policy failure case",
+            "goal": "reconcile orders execution path",
+            "repo_path": str(repo_root),
+            "task_type": "code",
+            "validation_commands": [
+                "python3 -m py_compile broken.py",
+                "python3 -c \"import broken\"",
+            ],
+            "allowed_actions": ["read", "validate"],
+            "files_of_interest": ["broken.py"],
+        }
+        broken_file = repo_root / "broken.py"
+        broken_file.write_text("def broken(:\n    pass\n", encoding="utf-8")
+        failing_result = materialize_coding_run(temp_dir, failing_payload).get("result") or {}
+        _assert(failing_result.get("review_packet", {}).get("verdict") == "needs_replan", "syntax/import failures should map to needs_replan")
+        _assert(failing_result.get("validation_policy", {}).get("change_disposition_hint") == "revert_suggested", "syntax/import failures should suggest revert")
+
         _print("coding executor status", {
             "result": result,
+            "failing_result": failing_result,
             "artifact": materialized.get("artifact"),
         })
         print("\nALL_CHECKS_PASSED")

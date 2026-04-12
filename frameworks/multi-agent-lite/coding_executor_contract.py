@@ -3,6 +3,36 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
+def _derive_validation_policy(validation_records: List[Dict[str, Any]], risks: List[str], blockers: List[str], needs_input: List[str]) -> Dict[str, Any]:
+    failed_surfaces = [str(x.get("surface") or "") for x in validation_records if str(x.get("status") or "") == "failed"]
+    blocked_surfaces = [str(x.get("surface") or "") for x in validation_records if str(x.get("status") or "") == "blocked"]
+
+    verdict_hint = "accepted"
+    manager_action_hint = "finalize_or_merge"
+    change_disposition_hint = "keep_for_review"
+
+    if blockers or needs_input or blocked_surfaces:
+        verdict_hint = "blocked"
+        manager_action_hint = "request_input_or_unblock"
+        change_disposition_hint = "review_then_revert_or_keep"
+    elif any(surface in {"syntax", "import"} for surface in failed_surfaces):
+        verdict_hint = "needs_replan"
+        manager_action_hint = "sendback_with_replan"
+        change_disposition_hint = "revert_suggested"
+    elif any(surface in {"unit", "project_command"} for surface in failed_surfaces):
+        verdict_hint = "needs_replan"
+        manager_action_hint = "sendback_with_replan"
+        change_disposition_hint = "keep_for_review"
+
+    return {
+        "failed_surfaces": failed_surfaces,
+        "blocked_surfaces": blocked_surfaces,
+        "verdict_hint": verdict_hint,
+        "manager_action_hint": manager_action_hint,
+        "change_disposition_hint": change_disposition_hint,
+    }
+
+
 def _build_review_packet(*, files_changed: List[str] | None = None, target_files: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, validation_records: List[Dict[str, Any]] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None) -> Dict[str, Any]:
     files_changed = [str(x) for x in (files_changed or []) if str(x).strip()]
     target_files = [str(x) for x in (target_files or []) if str(x).strip()]
@@ -15,10 +45,11 @@ def _build_review_packet(*, files_changed: List[str] | None = None, target_files
 
     blocked = bool(blockers or needs_input or any("blocked" in x.lower() for x in test_results))
     failed = any("failed" in x.lower() for x in test_results)
+    policy = _derive_validation_policy(validation_records, risks, blockers, needs_input)
     if blocked:
         verdict = "blocked"
     elif failed:
-        verdict = "needs_replan"
+        verdict = str(policy.get("verdict_hint") or "needs_replan")
     elif files_changed or tests_run:
         verdict = "accepted"
     else:
@@ -42,9 +73,9 @@ def _build_review_packet(*, files_changed: List[str] | None = None, target_files
     if verdict == "accepted":
         manager_action = "finalize_or_merge"
     elif verdict == "needs_replan":
-        manager_action = "sendback_with_replan"
+        manager_action = str(policy.get("manager_action_hint") or "sendback_with_replan")
     elif verdict == "blocked":
-        manager_action = "request_input_or_unblock"
+        manager_action = str(policy.get("manager_action_hint") or "request_input_or_unblock")
 
     rollback_hint = "no file changes applied"
     if files_changed:
@@ -58,6 +89,7 @@ def _build_review_packet(*, files_changed: List[str] | None = None, target_files
         "targets_considered": target_files,
         "tests_considered": tests_run,
         "validation_records": validation_records,
+        "validation_policy": policy,
         "risk_count": len(risks),
         "blocking_reasons": blockers + needs_input,
         "rollback_hint": rollback_hint,
@@ -131,6 +163,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         blockers=blockers,
         needs_input=needs_input,
     )
+    validation_policy = dict(review_packet.get("validation_policy") or {})
     return {
         "status": status,
         "summary": summary,
@@ -144,6 +177,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         "tests_run": tests_run,
         "test_results": test_results,
         "validation_records": [dict(x) for x in (validation_records or []) if isinstance(x, dict)],
+        "validation_policy": validation_policy,
         "risks": risks,
         "blockers": blockers,
         "needs_input": needs_input,
