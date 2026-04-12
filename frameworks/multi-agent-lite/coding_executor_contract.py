@@ -142,6 +142,38 @@ def build_empty_coding_result(packet: Dict[str, Any], reason: str) -> Dict[str, 
     }
 
 
+def _derive_retry_narrowing_hints(*, target_files: List[str], validation_records: List[Dict[str, Any]], validation_policy: Dict[str, Any], edit_plan: List[Dict[str, Any]]) -> Dict[str, Any]:
+    failed_surfaces = [str(x) for x in (validation_policy.get("failed_surfaces") or []) if str(x).strip()]
+    top_files = [str(x) for x in (target_files or []) if str(x).strip()][:3]
+    symbol_hits: List[str] = []
+    for item in (edit_plan or [])[:5]:
+        ctx = item.get("context") or {}
+        for symbol in (ctx.get("goal_symbol_hits") or []):
+            value = str(symbol).strip()
+            if value and value not in symbol_hits:
+                symbol_hits.append(value)
+
+    validation_focus = failed_surfaces[:3]
+    scope_level = "broad"
+    if symbol_hits:
+        scope_level = "symbol"
+    elif top_files:
+        scope_level = "file"
+    elif validation_focus:
+        scope_level = "validation_surface"
+
+    return {
+        "scope_level": scope_level,
+        "target_files": top_files,
+        "target_symbols": symbol_hits[:5],
+        "validation_focus": validation_focus,
+        "suggested_actions": [
+            "narrow the next run to the smallest failing scope",
+            "preserve validation coverage for previously failing surfaces",
+        ],
+    }
+
+
 def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_changed: List[str] | None = None, target_files: List[str] | None = None, deliverables: List[str] | None = None, repo_scan: Dict[str, Any] | None = None, edit_plan: List[Dict[str, Any]] | None = None, draft_artifacts: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, validation_records: List[Dict[str, Any]] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None, recommended_next_step: str = "") -> Dict[str, Any]:
     blockers = [str(x) for x in (blockers or []) if str(x).strip()]
     needs_input = [str(x) for x in (needs_input or []) if str(x).strip()]
@@ -164,6 +196,13 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         needs_input=needs_input,
     )
     validation_policy = dict(review_packet.get("validation_policy") or {})
+    retry_narrowing_hints = _derive_retry_narrowing_hints(
+        target_files=target_files,
+        validation_records=[dict(x) for x in (validation_records or []) if isinstance(x, dict)],
+        validation_policy=validation_policy,
+        edit_plan=list(edit_plan or []),
+    )
+    review_packet["retry_narrowing_hints"] = retry_narrowing_hints
     return {
         "status": status,
         "summary": summary,
@@ -178,6 +217,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         "test_results": test_results,
         "validation_records": [dict(x) for x in (validation_records or []) if isinstance(x, dict)],
         "validation_policy": validation_policy,
+        "retry_narrowing_hints": retry_narrowing_hints,
         "risks": risks,
         "blockers": blockers,
         "needs_input": needs_input,

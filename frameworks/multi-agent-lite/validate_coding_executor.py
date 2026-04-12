@@ -93,6 +93,8 @@ def main() -> None:
         _assert(isinstance(result.get("review_packet", {}).get("validation_records"), list), "review packet should carry validation records")
         _assert(isinstance(result.get("validation_policy"), dict), "coding result should expose validation policy")
         _assert(result.get("validation_policy", {}).get("verdict_hint") == "accepted", "successful validation surfaces should hint accepted")
+        _assert(isinstance(result.get("retry_narrowing_hints"), dict), "coding result should expose retry narrowing hints")
+        _assert(result.get("review_packet", {}).get("retry_narrowing_hints", {}).get("scope_level") in {"symbol", "file", "validation_surface", "broad"}, "review packet should expose narrowing scope level")
         _assert(result.get("review_packet", {}).get("verdict") == "accepted", "successful coding run should emit accepted review verdict")
         _assert(result.get("review_packet", {}).get("change_scope") == "multi_file", "multi-file coding run should be classified as multi_file")
         _assert(len(result.get("target_files") or []) >= 2, "coding executor should preserve multi-file target list")
@@ -132,6 +134,8 @@ def main() -> None:
         failing_result = materialize_coding_run(temp_dir, failing_payload).get("result") or {}
         _assert(failing_result.get("review_packet", {}).get("verdict") == "needs_replan", "syntax/import failures should map to needs_replan")
         _assert(failing_result.get("validation_policy", {}).get("change_disposition_hint") == "revert_suggested", "syntax/import failures should suggest revert")
+        _assert(isinstance(failing_result.get("retry_narrowing_hints"), dict), "failing result should expose retry narrowing hints")
+        _assert(failing_result.get("retry_narrowing_hints", {}).get("validation_focus") in (["syntax", "import"], ["import", "syntax"], ["syntax"], ["import"]), "failing result should focus retry on failing validation surfaces")
 
         _print("coding executor status", {
             "result": result,
