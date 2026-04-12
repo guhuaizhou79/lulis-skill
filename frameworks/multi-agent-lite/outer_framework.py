@@ -87,10 +87,45 @@ def _outer_runtime_dir(root: Path) -> Path:
     return path
 
 
+def _sendback_runtime_dir(root: Path) -> Path:
+    path = _outer_runtime_dir(root) / "sendback"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _load_sendback_history(root: Path, task_key: str) -> List[Dict[str, Any]]:
+    path = _sendback_runtime_dir(root) / f"{task_key}.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [x for x in data if isinstance(x, dict)]
+
+
+def _store_sendback_history(root: Path, task_key: str, rows: List[Dict[str, Any]]) -> str:
+    path = _sendback_runtime_dir(root) / f"{task_key}.json"
+    path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(path)
+
+
 def _append_registry_row(root: Path, row: Dict[str, Any]) -> None:
     path = _outer_runtime_dir(root) / "registry.jsonl"
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _task_sendback_key(payload: Dict[str, Any], route_result: Dict[str, Any]) -> str:
+    repo_path = str(payload.get("repo_path") or "").strip().lower().replace("/", "-")
+    title = str(payload.get("title") or payload.get("goal") or "task").strip().lower().replace(" ", "-")
+    base = f"{repo_path}--{title}" if repo_path else title
+    safe = "".join(ch for ch in base if ch.isalnum() or ch in {"-", "_"})[:120]
+    return safe or "task"
+
+
 
 
 def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -192,6 +227,7 @@ def build_manager_sendback_packet(route_result: Dict[str, Any]) -> Dict[str, Any
     risks = [str(x) for x in (coding_exec.get("risks") or []) if str(x).strip()]
     tests_run = [str(x) for x in (coding_exec.get("tests_run") or []) if str(x).strip()]
     test_results = [str(x) for x in (coding_exec.get("test_results") or []) if str(x).strip()]
+    previous_sendback_count = int(route_result.get("sendback_count") or 0)
 
     requested_action = "replan" if verdict == "needs_replan" else "unblock_or_clarify"
     retry_strategy = "manager should refine scope and rerun coding executor with narrower instructions"
@@ -209,6 +245,7 @@ def build_manager_sendback_packet(route_result: Dict[str, Any]) -> Dict[str, Any
         "reason": review_packet.get("manager_action_suggestion") or verdict,
         "verdict": verdict,
         "confidence": review_packet.get("confidence") or "low",
+        "sendback_count": previous_sendback_count + 1,
         "why": {
             "blockers": blockers,
             "needs_input": needs_input,
@@ -279,7 +316,7 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any], writeback_plan: Dict[str, Any], writeback_stub: Dict[str, Any] | None = None) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
-    sendback_packet = build_manager_sendback_packet(route_result)
+    sendback_packet = route_result.get("manager_sendback_packet")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -297,6 +334,8 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "writeback_plan": writeback_plan,
         "writeback_stub": writeback_stub,
         "manager_sendback_packet": sendback_packet,
+        "sendback_history": route_result.get("sendback_history") or [],
+        "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
         "sendback_count": int(route_result.get("sendback_count") or 0),
         "artifact_lifecycle": route_result.get("artifact_lifecycle") or [],
@@ -344,6 +383,11 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "title": payload.get("title"),
         "goal": payload.get("goal"),
     }) and str(payload.get("repo_path") or "").strip():
+        task_key = _task_sendback_key(payload, route_result)
+        history = _load_sendback_history(root, task_key)
+        route_result["sendback_history"] = history
+        route_result["sendback_count"] = len(history)
+
         coding_exec = materialize_coding_run(root, _build_coding_executor_payload(payload))
         run_trace["coding_executor_artifact"] = coding_exec.get("artifact")
         route_result["coding_executor_result"] = coding_exec.get("result")
@@ -356,6 +400,23 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["final_status"] = "BLOCKED"
         elif review_verdict == "needs_replan" or any("failed" in x.lower() for x in coding_test_results):
             route_result["final_status"] = "PLAN"
+
+        sendback_packet = build_manager_sendback_packet(route_result)
+        route_result["manager_sendback_packet"] = sendback_packet
+        if sendback_packet:
+            history_entry = {
+                "run_id": run_id,
+                "requested_action": sendback_packet.get("requested_action"),
+                "verdict": sendback_packet.get("verdict"),
+                "reason": sendback_packet.get("reason"),
+                "timestamp": finished_at,
+            }
+            history = history + [history_entry]
+            route_result["sendback_history"] = history
+            route_result["sendback_count"] = len(history)
+            route_result["sendback_history_path"] = _store_sendback_history(root, task_key, history)
+        else:
+            route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)

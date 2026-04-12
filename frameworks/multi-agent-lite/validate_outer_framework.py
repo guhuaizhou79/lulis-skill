@@ -113,10 +113,18 @@ def main() -> None:
         _assert(isinstance(failing_result.get("manager_sendback_packet"), dict), "failed coding run should emit manager sendback packet")
         _assert(failing_result.get("manager_sendback_packet", {}).get("requested_action") == "replan", "failed validation should request replan sendback")
         _assert(failing_result.get("manager_sendback_packet", {}).get("file_handling") == "keep_changed_files_for_review", "failed validation should keep changed files for manager review")
+        _assert(failing_result.get("manager_sendback_packet", {}).get("sendback_count") == 1, "first failing run should start sendback count at 1")
+        _assert(isinstance(failing_result.get("sendback_history"), list) and len(failing_result.get("sendback_history") or []) == 1, "first failing run should record one sendback history row")
+        _assert(failing_result.get("sendback_history_path"), "failing run should expose sendback history path")
+        _assert(Path(failing_result.get("sendback_history_path")).exists(), "sendback history file should exist")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_state") is True, "failed coding validation should recommend state sync")
+
+        failing_result_second = run_outer_framework(test_root, failing_payload)
+        _assert(failing_result_second.get("manager_sendback_packet", {}).get("sendback_count") == 2, "second failing run should increment sendback count")
+        _assert(len(failing_result_second.get("sendback_history") or []) == 2, "second failing run should append sendback history")
 
         staged_payload = {
             "title": "staged automation",
@@ -187,7 +195,16 @@ def main() -> None:
                 "coding_executor_result": failing_result.get("coding_executor_result"),
                 "coding_review_packet": failing_result.get("coding_executor_result", {}).get("review_packet"),
                 "manager_sendback_packet": failing_result.get("manager_sendback_packet"),
+                "sendback_history": failing_result.get("sendback_history"),
+                "sendback_history_path": failing_result.get("sendback_history_path"),
                 "run_id": failing_result.get("run_id"),
+            },
+            "coding_failure_second": {
+                "normalized_status": failing_result_second.get("normalized_status"),
+                "manager_sendback_packet": failing_result_second.get("manager_sendback_packet"),
+                "sendback_history": failing_result_second.get("sendback_history"),
+                "sendback_history_path": failing_result_second.get("sendback_history_path"),
+                "run_id": failing_result_second.get("run_id"),
             },
             "staged": {
                 "route": staged_result.get("route"),
