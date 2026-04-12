@@ -126,6 +126,126 @@ def _task_sendback_key(payload: Dict[str, Any], route_result: Dict[str, Any]) ->
     return safe or "task"
 
 
+def _dedupe_strings(values: List[Any]) -> List[str]:
+    seen = set()
+    result: List[str] = []
+    for item in values:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    sendback_packet = route_result.get("manager_sendback_packet") or {}
+    if not sendback_packet:
+        return None
+
+    verdict = str(sendback_packet.get("verdict") or "")
+    coding_exec = route_result.get("coding_executor_result") or {}
+    review_packet = coding_exec.get("review_packet") or {}
+    why = sendback_packet.get("why") or {}
+    blockers = _dedupe_strings((why.get("blockers") or []) + (review_packet.get("blocking_reasons") or []))
+    needs_input = _dedupe_strings(why.get("needs_input") or [])
+    risks = _dedupe_strings((why.get("risks") or []) + (coding_exec.get("risks") or []))
+    test_results = _dedupe_strings(why.get("test_results") or coding_exec.get("test_results") or [])
+    files_changed = _dedupe_strings(sendback_packet.get("files_changed") or coding_exec.get("files_changed") or [])
+    history = [x for x in (route_result.get("sendback_history") or []) if isinstance(x, dict)]
+    prior_verdicts = [str(x.get("verdict") or "").strip() for x in history if str(x.get("verdict") or "").strip()]
+    repeated_same_verdict = len(prior_verdicts) >= 2 and len(set(prior_verdicts[-2:])) == 1
+
+    next_constraints = _dedupe_strings(list(payload.get("constraints") or []) + [
+        "Stay within coding-executor scope; do not become a second manager/controller.",
+        "Use review/sendback signals to refine the next run, not to expand orchestration ownership.",
+        "Prefer narrower, validation-backed edits over wider speculative changes.",
+    ])
+    next_acceptance = list(payload.get("acceptance") or [])
+    next_allowed_actions = list(payload.get("allowed_actions") or [])
+    next_validation_commands = list(payload.get("validation_commands") or [])
+    next_files = list(payload.get("files_of_interest") or [])
+
+    retry_notes: List[str] = []
+    if blockers:
+        retry_notes.append("Resolve blockers or collect missing input before re-running broad edits.")
+    if test_results:
+        retry_notes.append("Address the last failed/blocked validation signals before adding new scope.")
+    if files_changed:
+        retry_notes.append(f"Re-check touched files first: {files_changed[:5]}")
+    if repeated_same_verdict:
+        retry_notes.append("Repeated same-verdict sendback detected; tighten scope and avoid repeating the prior attempt.")
+
+    next_goal_parts = [str(payload.get("goal") or "").strip()]
+    if verdict == "needs_replan":
+        next_goal_parts.append("Replan the coding run narrowly around the last failed validation/review signals.")
+    elif verdict == "blocked":
+        next_goal_parts.append("Unblock missing inputs or reduce scope before retrying coding execution.")
+    if retry_notes:
+        next_goal_parts.append(" ".join(retry_notes))
+    next_goal = " ".join(part for part in next_goal_parts if part).strip()
+
+    if sendback_packet.get("next_executor_payload_hints", {}).get("tighten_target_files") and files_changed:
+        normalized_files: List[str] = []
+        repo_path = str(payload.get("repo_path") or "").strip()
+        repo_prefix = repo_path.rstrip("/") + "/" if repo_path else ""
+        for item in files_changed:
+            rel = str(item)
+            if repo_prefix and rel.startswith(repo_prefix):
+                rel = rel[len(repo_prefix):]
+            normalized_files.append(rel)
+        next_files = _dedupe_strings(normalized_files + next_files)
+
+    if sendback_packet.get("next_executor_payload_hints", {}).get("tighten_allowed_actions"):
+        next_allowed_actions = [x for x in next_allowed_actions if x in {"read", "replace", "validate"}]
+        if not next_allowed_actions:
+            next_allowed_actions = ["read", "replace", "validate"]
+
+    if sendback_packet.get("next_executor_payload_hints", {}).get("require_validation_before_accept") and not next_validation_commands:
+        next_constraints.append("Validation commands must be provided or clarified before the next run can be accepted.")
+
+    escalation = None
+    if repeated_same_verdict or int(sendback_packet.get("sendback_count") or 0) >= 3:
+        escalation = {
+            "level": "manager_review",
+            "reason": "multiple sendbacks on the same coding line; consider narrower payload or manual decision",
+        }
+
+    return {
+        "title": payload.get("title"),
+        "goal": next_goal,
+        "repo_path": payload.get("repo_path") or "",
+        "task_type": payload.get("task_type") or "code",
+        "constraints": next_constraints,
+        "acceptance": next_acceptance,
+        "files_of_interest": next_files,
+        "validation_expectations": _dedupe_strings(list(payload.get("validation_expectations") or []) + retry_notes),
+        "validation_commands": next_validation_commands,
+        "allowed_actions": next_allowed_actions,
+        "append_text": payload.get("append_text") or "",
+        "replace_old": payload.get("replace_old") or "",
+        "replace_new": payload.get("replace_new") or "",
+        "sendback_context": {
+            "requested_action": sendback_packet.get("requested_action"),
+            "verdict": verdict,
+            "reason": sendback_packet.get("reason"),
+            "sendback_count": sendback_packet.get("sendback_count"),
+            "blockers": blockers,
+            "needs_input": needs_input,
+            "risks": risks,
+            "test_results": test_results,
+            "files_changed": files_changed,
+            "rollback_hint": sendback_packet.get("rollback_hint") or review_packet.get("rollback_hint") or "",
+            "retry_strategy": sendback_packet.get("retry_strategy") or "",
+        },
+        "escalation_hint": escalation,
+        "builder_meta": {
+            "source": "outer_framework.sendback_payload_builder",
+            "history_entries_considered": len(history),
+            "repeated_same_verdict": repeated_same_verdict,
+        },
+    }
+
 
 
 def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -317,6 +437,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
     sendback_packet = route_result.get("manager_sendback_packet")
+    next_payload = route_result.get("next_executor_payload")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -334,6 +455,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "writeback_plan": writeback_plan,
         "writeback_stub": writeback_stub,
         "manager_sendback_packet": sendback_packet,
+        "next_executor_payload": next_payload,
         "sendback_history": route_result.get("sendback_history") or [],
         "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
@@ -415,8 +537,10 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["sendback_history"] = history
             route_result["sendback_count"] = len(history)
             route_result["sendback_history_path"] = _store_sendback_history(root, task_key, history)
+            route_result["next_executor_payload"] = build_next_executor_payload(payload, route_result)
         else:
             route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
+            route_result["next_executor_payload"] = None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)
