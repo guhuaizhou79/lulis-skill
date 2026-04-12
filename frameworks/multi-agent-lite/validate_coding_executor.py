@@ -33,6 +33,7 @@ def main() -> None:
     repo_root.mkdir(parents=True, exist_ok=True)
     readme = repo_root / "README.md"
     readme.write_text("# sample repo\nhello old world\n", encoding="utf-8")
+    (repo_root / "check.py").write_text("print('ok')\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
 
     try:
@@ -48,6 +49,9 @@ def main() -> None:
             ],
             "validation_expectations": [
                 "document validation path",
+            ],
+            "validation_commands": [
+                "python3 check.py",
             ],
             "allowed_actions": ["read", "append", "replace", "validate"],
             "append_text": "<!-- controlled append marker -->",
@@ -68,6 +72,8 @@ def main() -> None:
         updated = readme.read_text(encoding="utf-8")
         _assert("controlled append marker" in updated, "controlled append marker should be written to target file")
         _assert("hello new world" in updated, "controlled replace should be written to target file")
+        _assert(any("python3 check.py" == x for x in result.get("tests_run") or []), "validation command should be recorded")
+        _assert(any("passed: rc=0" in x for x in result.get("test_results") or []), "validation command should pass")
 
         materialized = materialize_coding_run(temp_dir, payload)
         _assert(Path(materialized.get("artifact")).exists(), "coding executor should materialize runtime artifact")

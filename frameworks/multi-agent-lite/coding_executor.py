@@ -3,11 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 import json
+import subprocess
 
 from coding_executor_contract import (
     build_coding_task_packet,
     build_coding_result_packet,
     build_empty_coding_result,
+)
+
+
+SAFE_VALIDATE_PREFIXES = (
+    "python3 ",
+    "python ",
+    "pytest",
+    "node ",
+    "npm test",
+    "npm run ",
+    "pnpm test",
+    "pnpm run ",
+    "bash ",
+    "sh ",
 )
 
 
@@ -170,6 +185,33 @@ class CodingExecutor:
             test_results.append("passed")
         return files_changed, tests_run, test_results, risks
 
+    def _run_validation_commands(self, repo: Path, payload: Dict[str, Any]) -> tuple[List[str], List[str], List[str]]:
+        commands = [str(x).strip() for x in (payload.get("validation_commands") or []) if str(x).strip()]
+        tests_run: List[str] = []
+        test_results: List[str] = []
+        risks: List[str] = []
+        for cmd in commands[:5]:
+            if not any(cmd.startswith(prefix) for prefix in SAFE_VALIDATE_PREFIXES):
+                tests_run.append(f"validation command blocked: {cmd}")
+                test_results.append("blocked")
+                risks.append(f"validation command not in safe prefixes: {cmd}")
+                continue
+            proc = subprocess.run(
+                cmd,
+                cwd=str(repo),
+                shell=True,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            tests_run.append(cmd)
+            status = "passed" if proc.returncode == 0 else "failed"
+            snippet = (proc.stdout or proc.stderr or "").strip()[:160]
+            test_results.append(f"{status}: rc={proc.returncode} {snippet}".strip())
+            if proc.returncode != 0:
+                risks.append(f"validation command failed: {cmd}")
+        return tests_run, test_results, risks
+
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         packet = build_coding_task_packet(payload)
         packet["append_text"] = payload.get("append_text") or ""
@@ -206,17 +248,20 @@ class CodingExecutor:
         replace_changed, replace_tests, replace_results, replace_risks = self._apply_replace_change(repo, packet, target_files)
         files_changed.extend([x for x in replace_changed if x not in files_changed])
         risks.extend(replace_risks)
+        tests_run.extend(apply_tests)
+        test_results.extend(apply_results)
+        tests_run.extend(replace_tests)
+        test_results.extend(replace_results)
+
+        validation_tests, validation_results, validation_risks = self._run_validation_commands(repo, payload)
+        tests_run.extend(validation_tests)
+        test_results.extend(validation_results)
+        risks.extend(validation_risks)
+
         if files_changed:
             summary = f"coding executor applied controlled file change for: {packet['title']}"
-            tests_run.extend(apply_tests)
-            test_results.extend(apply_results)
-            tests_run.extend(replace_tests)
-            test_results.extend(replace_results)
-        else:
-            tests_run.extend(apply_tests)
-            test_results.extend(apply_results)
-            tests_run.extend(replace_tests)
-            test_results.extend(replace_results)
+        if validation_tests:
+            summary += " | validation commands executed"
 
         result = build_coding_result_packet(
             packet,
@@ -232,7 +277,7 @@ class CodingExecutor:
             risks=risks,
             blockers=[],
             needs_input=[],
-            recommended_next_step="manager may now review changed files or extend executor beyond controlled append mode",
+            recommended_next_step="manager may now review validation results and decide whether to extend executor beyond controlled edit modes",
         )
         return result
 
