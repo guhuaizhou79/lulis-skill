@@ -83,7 +83,35 @@ def main() -> None:
         _assert(isinstance(coding_result.get("coding_result_packet"), dict), "code task should expose coding_result_packet")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context"), dict), "coding result should include repo_context")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context", {}).get("repo_context"), dict), "coding result should include nested repo-aware context")
-        _assert(isinstance(coding_result.get("coding_executor_result"), dict), "code task should expose delegated coding executor result")
+        _assert(coding_result.get("coding_executor_result") is None, "code task without repo_path should not force delegated coding executor")
+
+        failing_repo = test_root / "failing-code-repo"
+        failing_repo.mkdir(parents=True, exist_ok=True)
+        (failing_repo / "README.md").write_text("hello old world\n", encoding="utf-8")
+        (failing_repo / "check.py").write_text("import sys; sys.exit(1)\n", encoding="utf-8")
+        failing_payload = {
+            "title": "failing coding validation",
+            "goal": "exercise outer review mapping for coding validation failure",
+            "task_type": "code",
+            "priority": "high",
+            "repo_path": str(failing_repo),
+            "files_of_interest": ["README.md"],
+            "allowed_actions": ["read", "replace", "validate"],
+            "replace_old": "hello old world",
+            "replace_new": "hello new world",
+            "validation_commands": ["python3 check.py"],
+            "acceptance": [
+                "run validation",
+                "surface non-completed outer status when validation fails",
+                "keep writeback advisory-only",
+            ],
+        }
+        failing_result = run_outer_framework(test_root, failing_payload)
+        _assert(failing_result.get("route") == "multi_agent_lite", "failing code task should still route to staged path")
+        _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
+        _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
+        _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
+        _assert(failing_result.get("writeback_policy", {}).get("should_write_state") is True, "failed coding validation should recommend state sync")
 
         staged_payload = {
             "title": "staged automation",
@@ -146,6 +174,13 @@ def main() -> None:
                 "coding_result_packet": coding_result.get("coding_result_packet"),
                 "coding_executor_result": coding_result.get("coding_executor_result"),
                 "run_id": coding_result.get("run_id"),
+            },
+            "coding_failure": {
+                "route": failing_result.get("route"),
+                "normalized_status": failing_result.get("normalized_status"),
+                "writeback_policy": failing_result.get("writeback_policy"),
+                "coding_executor_result": failing_result.get("coding_executor_result"),
+                "run_id": failing_result.get("run_id"),
             },
             "staged": {
                 "route": staged_result.get("route"),

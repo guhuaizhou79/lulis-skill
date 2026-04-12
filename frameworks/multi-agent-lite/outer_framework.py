@@ -127,17 +127,30 @@ def normalize_outer_status(route_result: Dict[str, Any]) -> str:
     final_status = str(route_result.get("final_status") or "DONE")
     packet = route_result.get("task_result_packet") or {}
     packet_status = str(packet.get("status") or "")
+    coding_exec = route_result.get("coding_executor_result") or {}
+    coding_status = str(coding_exec.get("status") or "")
+    coding_test_results = [str(x) for x in (coding_exec.get("test_results") or []) if str(x).strip()]
 
-    if final_status == "DONE" and packet_status == "success":
-        return "completed"
+    if coding_status == "blocked":
+        return "blocked"
+    if any("blocked" in x.lower() for x in coding_test_results):
+        return "blocked"
+    if any("failed" in x.lower() for x in coding_test_results):
+        return "needs_replan"
     if final_status == "READY":
         return "needs_execution_rerun"
     if final_status == "PLAN":
         return "needs_replan"
-    if final_status == "BLOCKED" or packet_status == "blocked":
+    if final_status == "BLOCKED":
         return "blocked"
-    if final_status == "FAILED" or packet_status == "failed":
+    if final_status == "FAILED":
         return "failed"
+    if packet_status == "blocked":
+        return "blocked"
+    if packet_status == "failed":
+        return "failed"
+    if final_status == "DONE" and packet_status == "success":
+        return "completed"
     return "in_progress"
 
 
@@ -146,10 +159,11 @@ def build_writeback_policy(route_result: Dict[str, Any]) -> Dict[str, Any]:
     final_status = str(route_result.get("final_status") or "DONE")
     packet_status = str(packet.get("status") or "")
     advisory = route_result.get("writeback_hint") or {"level": 0, "targets": []}
+    normalized = normalize_outer_status(route_result)
 
-    should_write_summary = final_status == "DONE" and packet_status == "success"
+    should_write_summary = normalized == "completed" and final_status == "DONE" and packet_status == "success"
     should_write_memory = should_write_summary and advisory.get("level", 0) >= 2
-    should_write_state = final_status in {"READY", "PLAN", "BLOCKED"}
+    should_write_state = normalized in {"needs_execution_rerun", "needs_replan", "blocked"}
 
     return {
         "advisory_only": True,
@@ -171,6 +185,11 @@ def _build_coding_executor_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "acceptance": payload.get("acceptance") or [],
         "files_of_interest": payload.get("files_of_interest") or [],
         "validation_expectations": payload.get("validation_expectations") or [],
+        "validation_commands": payload.get("validation_commands") or [],
+        "allowed_actions": payload.get("allowed_actions") or [],
+        "append_text": payload.get("append_text") or "",
+        "replace_old": payload.get("replace_old") or "",
+        "replace_new": payload.get("replace_new") or "",
     }
 
 
@@ -271,10 +290,17 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "task_type": payload.get("task_type"),
         "title": payload.get("title"),
         "goal": payload.get("goal"),
-    }):
+    }) and str(payload.get("repo_path") or "").strip():
         coding_exec = materialize_coding_run(root, _build_coding_executor_payload(payload))
         run_trace["coding_executor_artifact"] = coding_exec.get("artifact")
         route_result["coding_executor_result"] = coding_exec.get("result")
+        coding_result = coding_exec.get("result") or {}
+        coding_status = str(coding_result.get("status") or "")
+        coding_test_results = [str(x) for x in (coding_result.get("test_results") or []) if str(x).strip()]
+        if coding_status == "blocked" or any("blocked" in x.lower() for x in coding_test_results):
+            route_result["final_status"] = "BLOCKED"
+        elif any("failed" in x.lower() for x in coding_test_results):
+            route_result["final_status"] = "PLAN"
 
     _append_registry_row(root, run_trace)
     writeback_plan = build_writeback_plan({
