@@ -123,6 +123,29 @@ It may recommend whether a result is worth:
 
 But it must not directly mutate global memory/docs/state surfaces by itself.
 
+### Coding rerun feedback boundary
+
+For coding tasks, the outer framework now consumes executor-produced rerun signals instead of inventing the next retry scope by itself.
+
+Current executor -> outer feedback surface:
+- `validation_policy`
+- `retry_narrowing_hints.target_files`
+- `retry_narrowing_hints.target_symbols`
+- `retry_narrowing_hints.validation_focus`
+
+Current outer behavior:
+- keeps final rerun / sendback authority
+- builds `next_executor_payload`
+- prefers executor-provided narrowing hints over broad outer-side guessing
+- carries the consumed feedback forward as `executor_feedback`
+
+This keeps the boundary clean:
+- **executor** says what failed, where to narrow, and which validation surface matters next
+- **outer** decides whether to rerun, block, escalate, or hand back a narrower payload
+
+The goal is not to make outer a second code-aware controller.
+The goal is to let outer consume structured executor feedback without losing role separation.
+
 ---
 
 ## Validation
