@@ -33,6 +33,8 @@ def main() -> None:
     repo_root.mkdir(parents=True, exist_ok=True)
     readme = repo_root / "README.md"
     readme.write_text("# sample repo\nhello old world\n", encoding="utf-8")
+    guide = repo_root / "GUIDE.md"
+    guide.write_text("guide hello old world\n", encoding="utf-8")
     (repo_root / "check.py").write_text("print('ok')\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
 
@@ -57,7 +59,7 @@ def main() -> None:
             "append_text": "<!-- controlled append marker -->",
             "replace_old": "hello old world",
             "replace_new": "hello new world",
-            "files_of_interest": ["README.md"],
+            "files_of_interest": ["README.md", "GUIDE.md"],
         }
         result = executor.execute(payload)
         _assert(result.get("status") == "success", "coding executor should succeed for a valid repo task")
@@ -65,13 +67,18 @@ def main() -> None:
         _assert(isinstance(result.get("deliverables"), list) and result.get("deliverables"), "coding executor should expose deliverables")
         _assert(isinstance(result.get("repo_scan"), dict) and result.get("repo_scan"), "coding executor should expose repo_scan")
         _assert(isinstance(result.get("target_files"), list) and result.get("target_files"), "coding executor should expose target_files")
+        _assert(len(result.get("target_files") or []) >= 2, "coding executor should preserve multi-file target list")
         _assert(isinstance(result.get("edit_plan"), list) and result.get("edit_plan"), "coding executor should expose edit_plan")
         _assert(isinstance(result.get("draft_artifacts"), list) and result.get("draft_artifacts"), "coding executor should expose draft artifacts")
+        _assert(len(result.get("draft_artifacts") or []) >= 2, "coding executor should materialize per-file draft artifacts")
         _assert(Path(result.get("draft_artifacts")[0]).exists(), "coding executor draft artifact should exist")
         _assert(isinstance(result.get("files_changed"), list) and result.get("files_changed"), "coding executor should perform controlled file change")
         updated = readme.read_text(encoding="utf-8")
-        _assert("controlled append marker" in updated, "controlled append marker should be written to target file")
-        _assert("hello new world" in updated, "controlled replace should be written to target file")
+        guide_updated = guide.read_text(encoding="utf-8")
+        _assert("controlled append marker" in updated, "controlled append marker should be written to README target file")
+        _assert("controlled append marker" in guide_updated, "controlled append marker should be written to GUIDE target file")
+        _assert("hello new world" in updated, "controlled replace should be written to README target file")
+        _assert("hello new world" in guide_updated, "controlled replace should be written to GUIDE target file")
         _assert(any("python3 check.py" == x for x in result.get("tests_run") or []), "validation command should be recorded")
         _assert(any("passed: rc=0" in x for x in result.get("test_results") or []), "validation command should pass")
 

@@ -131,21 +131,21 @@ class CodingExecutor:
         if "append" not in allowed_actions or not append_text or not target_files:
             return files_changed, tests_run, test_results
 
-        rel = target_files[0]
-        full = repo / rel
-        if not full.exists() or not full.is_file():
-            return files_changed, tests_run, test_results
+        for rel in target_files[:5]:
+            full = repo / rel
+            if not full.exists() or not full.is_file():
+                continue
 
-        original = full.read_text(encoding="utf-8")
-        if append_text not in original:
-            sep = "" if original.endswith("\n") else "\n"
-            full.write_text(original + sep + append_text, encoding="utf-8")
-            files_changed.append(str(full))
-            tests_run.append(f"file append applied: {rel}")
-            test_results.append("passed")
-        else:
-            tests_run.append(f"file append skipped (already present): {rel}")
-            test_results.append("passed")
+            original = full.read_text(encoding="utf-8")
+            if append_text not in original:
+                sep = "" if original.endswith("\n") else "\n"
+                full.write_text(original + sep + append_text, encoding="utf-8")
+                files_changed.append(str(full))
+                tests_run.append(f"file append applied: {rel}")
+                test_results.append("passed")
+            else:
+                tests_run.append(f"file append skipped (already present): {rel}")
+                test_results.append("passed")
         return files_changed, tests_run, test_results
 
     def _apply_replace_change(self, repo: Path, packet: Dict[str, Any], target_files: List[str]) -> tuple[List[str], List[str], List[str], List[str]]:
@@ -159,30 +159,34 @@ class CodingExecutor:
         if "replace" not in allowed_actions or not replace_old or not target_files:
             return files_changed, tests_run, test_results, risks
 
-        rel = target_files[0]
-        full = repo / rel
-        if not full.exists() or not full.is_file():
-            return files_changed, tests_run, test_results, risks
+        matched_any = False
+        for rel in target_files[:5]:
+            full = repo / rel
+            if not full.exists() or not full.is_file():
+                continue
 
-        original = full.read_text(encoding="utf-8")
-        hits = original.count(replace_old)
-        if hits == 0:
-            tests_run.append(f"file replace skipped (old text not found): {rel}")
-            test_results.append("passed")
-            risks.append("replace_old not found; no change applied")
-            return files_changed, tests_run, test_results, risks
-        if hits > 1:
-            tests_run.append(f"file replace blocked (multiple matches): {rel}")
-            test_results.append("blocked")
-            risks.append("replace_old matched multiple times; exact replace not applied")
-            return files_changed, tests_run, test_results, risks
+            original = full.read_text(encoding="utf-8")
+            hits = original.count(replace_old)
+            if hits == 0:
+                tests_run.append(f"file replace skipped (old text not found): {rel}")
+                test_results.append("passed")
+                continue
+            if hits > 1:
+                tests_run.append(f"file replace blocked (multiple matches): {rel}")
+                test_results.append("blocked")
+                risks.append(f"replace_old matched multiple times in {rel}; exact replace not applied")
+                continue
 
-        updated = original.replace(replace_old, replace_new, 1)
-        if updated != original:
-            full.write_text(updated, encoding="utf-8")
-            files_changed.append(str(full))
-            tests_run.append(f"file replace applied: {rel}")
-            test_results.append("passed")
+            matched_any = True
+            updated = original.replace(replace_old, replace_new, 1)
+            if updated != original:
+                full.write_text(updated, encoding="utf-8")
+                files_changed.append(str(full))
+                tests_run.append(f"file replace applied: {rel}")
+                test_results.append("passed")
+
+        if not matched_any:
+            risks.append("replace_old not found in any selected target file; no replace applied")
         return files_changed, tests_run, test_results, risks
 
     def _run_validation_commands(self, repo: Path, payload: Dict[str, Any]) -> tuple[List[str], List[str], List[str]]:
