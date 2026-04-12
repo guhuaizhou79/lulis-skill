@@ -14,6 +14,8 @@ if str(CURRENT_DIR) not in sys.path:
 
 from outer_adapter import choose_route, run_adapter
 from writeback_stub import build_writeback_plan, materialize_writeback_stub
+from coding_profile import is_coding_task, build_code_result_packet
+from coding_executor import materialize_coding_run
 
 
 DIRECT_TASK_TYPES = {"choice_answering", "path_lookup", "fact_lookup"}
@@ -159,6 +161,19 @@ def build_writeback_policy(route_result: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_coding_executor_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "title": payload.get("title"),
+        "goal": payload.get("goal"),
+        "repo_path": payload.get("repo_path") or "",
+        "task_type": payload.get("task_type") or "code",
+        "constraints": payload.get("constraints") or [],
+        "acceptance": payload.get("acceptance") or [],
+        "files_of_interest": payload.get("files_of_interest") or [],
+        "validation_expectations": payload.get("validation_expectations") or [],
+    }
+
+
 def _run_direct(payload: Dict[str, Any]) -> Dict[str, Any]:
     summary = str(payload.get("goal") or payload.get("title") or "direct task")
     raw_task = _build_direct_raw_task(payload, summary)
@@ -192,7 +207,7 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any], writeback_plan: Dict[str, Any], writeback_stub: Dict[str, Any] | None = None) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
-    return {
+    result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
         "title": payload.get("title"),
@@ -214,6 +229,15 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "run_trace": run_trace,
         "raw_task": route_result.get("raw_task"),
     }
+    if is_coding_task({
+        "task_type": payload.get("task_type"),
+        "title": payload.get("title"),
+        "goal": payload.get("goal"),
+    }):
+        result["coding_result_packet"] = build_code_result_packet(route_result.get("raw_task") or payload, packet)
+        if route_result.get("coding_executor_result"):
+            result["coding_executor_result"] = route_result.get("coding_executor_result")
+    return result
 
 
 def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -243,6 +267,15 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "normalized_status": normalize_outer_status(route_result),
         "task_id": (route_result.get("raw_task") or {}).get("task_id") if isinstance(route_result.get("raw_task"), dict) else route_result.get("task_id"),
     }
+    if is_coding_task({
+        "task_type": payload.get("task_type"),
+        "title": payload.get("title"),
+        "goal": payload.get("goal"),
+    }):
+        coding_exec = materialize_coding_run(root, _build_coding_executor_payload(payload))
+        run_trace["coding_executor_artifact"] = coding_exec.get("artifact")
+        route_result["coding_executor_result"] = coding_exec.get("result")
+
     _append_registry_row(root, run_trace)
     writeback_plan = build_writeback_plan({
         "run_id": run_id,

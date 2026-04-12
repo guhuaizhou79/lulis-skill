@@ -67,6 +67,23 @@ def main() -> None:
         _assert(isinstance(light_result.get("raw_task"), dict), "light route should expose raw_task snapshot")
         _assert(light_result.get("raw_task", {}).get("orchestration_mode") == "light_role_check", "light raw task should record orchestration mode")
 
+        coding_payload = {
+            "title": "implement repo-aware coding lane",
+            "goal": "add coding-specific result structure for staged code work",
+            "task_type": "code",
+            "priority": "high",
+            "acceptance": [
+                "produce delivery-ready artifact",
+                "include coding-specific result packet",
+                "keep outer writeback advisory-only",
+            ],
+        }
+        coding_result = run_outer_framework(test_root, coding_payload)
+        _assert(coding_result.get("route") == "multi_agent_lite", "code task should route to staged path")
+        _assert(isinstance(coding_result.get("coding_result_packet"), dict), "code task should expose coding_result_packet")
+        _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context"), dict), "coding result should include repo_context")
+        _assert(isinstance(coding_result.get("coding_executor_result"), dict), "code task should expose delegated coding executor result")
+
         staged_payload = {
             "title": "staged automation",
             "goal": "produce a delivery-ready artifact with review and compact result",
@@ -121,6 +138,13 @@ def main() -> None:
                 "task_result_packet": light_result.get("task_result_packet"),
                 "raw_task": light_result.get("raw_task"),
                 "run_id": light_result.get("run_id"),
+            },
+            "coding": {
+                "route": coding_result.get("route"),
+                "normalized_status": coding_result.get("normalized_status"),
+                "coding_result_packet": coding_result.get("coding_result_packet"),
+                "coding_executor_result": coding_result.get("coding_executor_result"),
+                "run_id": coding_result.get("run_id"),
             },
             "staged": {
                 "route": staged_result.get("route"),
