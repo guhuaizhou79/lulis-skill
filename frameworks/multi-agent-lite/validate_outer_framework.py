@@ -83,7 +83,7 @@ def main() -> None:
         _assert(isinstance(coding_result.get("coding_result_packet"), dict), "code task should expose coding_result_packet")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context"), dict), "coding result should include repo_context")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context", {}).get("repo_context"), dict), "coding result should include nested repo-aware context")
-        _assert(coding_result.get("coding_executor_result") is None, "code task without repo_path should not force delegated coding executor")
+        _assert(coding_result.get("manager_sendback_packet") is None, "successful coding run should not emit manager sendback packet")
 
         failing_repo = test_root / "failing-code-repo"
         failing_repo.mkdir(parents=True, exist_ok=True)
@@ -110,6 +110,9 @@ def main() -> None:
         _assert(failing_result.get("route") == "multi_agent_lite", "failing code task should still route to staged path")
         _assert(isinstance(failing_result.get("coding_executor_result", {}).get("review_packet"), dict), "failing code task should expose coding review packet")
         _assert(failing_result.get("coding_executor_result", {}).get("review_packet", {}).get("verdict") == "needs_replan", "failed validation should emit needs_replan review verdict")
+        _assert(isinstance(failing_result.get("manager_sendback_packet"), dict), "failed coding run should emit manager sendback packet")
+        _assert(failing_result.get("manager_sendback_packet", {}).get("requested_action") == "replan", "failed validation should request replan sendback")
+        _assert(failing_result.get("manager_sendback_packet", {}).get("file_handling") == "keep_changed_files_for_review", "failed validation should keep changed files for manager review")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
@@ -183,6 +186,7 @@ def main() -> None:
                 "writeback_policy": failing_result.get("writeback_policy"),
                 "coding_executor_result": failing_result.get("coding_executor_result"),
                 "coding_review_packet": failing_result.get("coding_executor_result", {}).get("review_packet"),
+                "manager_sendback_packet": failing_result.get("manager_sendback_packet"),
                 "run_id": failing_result.get("run_id"),
             },
             "staged": {

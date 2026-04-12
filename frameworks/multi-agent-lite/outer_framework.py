@@ -179,6 +179,55 @@ def build_writeback_policy(route_result: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def build_manager_sendback_packet(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    coding_exec = route_result.get("coding_executor_result") or {}
+    review_packet = coding_exec.get("review_packet") or {}
+    verdict = str(review_packet.get("verdict") or "")
+    if verdict not in {"needs_replan", "blocked"}:
+        return None
+
+    files_changed = [str(x) for x in (coding_exec.get("files_changed") or []) if str(x).strip()]
+    blockers = [str(x) for x in (coding_exec.get("blockers") or []) if str(x).strip()]
+    needs_input = [str(x) for x in (coding_exec.get("needs_input") or []) if str(x).strip()]
+    risks = [str(x) for x in (coding_exec.get("risks") or []) if str(x).strip()]
+    tests_run = [str(x) for x in (coding_exec.get("tests_run") or []) if str(x).strip()]
+    test_results = [str(x) for x in (coding_exec.get("test_results") or []) if str(x).strip()]
+
+    requested_action = "replan" if verdict == "needs_replan" else "unblock_or_clarify"
+    retry_strategy = "manager should refine scope and rerun coding executor with narrower instructions"
+    if verdict == "blocked":
+        retry_strategy = "manager should resolve blockers or collect missing input before rerun"
+
+    file_handling = "keep_changed_files_for_review"
+    if verdict == "blocked" and files_changed:
+        file_handling = "review_and_possibly_revert_changed_files_before_retry"
+    if not files_changed:
+        file_handling = "no_file_revert_needed"
+
+    return {
+        "requested_action": requested_action,
+        "reason": review_packet.get("manager_action_suggestion") or verdict,
+        "verdict": verdict,
+        "confidence": review_packet.get("confidence") or "low",
+        "why": {
+            "blockers": blockers,
+            "needs_input": needs_input,
+            "risks": risks,
+            "tests_run": tests_run,
+            "test_results": test_results,
+        },
+        "retry_strategy": retry_strategy,
+        "files_changed": files_changed,
+        "file_handling": file_handling,
+        "rollback_hint": review_packet.get("rollback_hint") or "",
+        "next_executor_payload_hints": {
+            "tighten_target_files": True,
+            "tighten_allowed_actions": verdict == "blocked",
+            "require_validation_before_accept": True,
+        },
+    }
+
+
 def _build_coding_executor_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "title": payload.get("title"),
@@ -230,6 +279,7 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any], writeback_plan: Dict[str, Any], writeback_stub: Dict[str, Any] | None = None) -> Dict[str, Any]:
     packet = route_result.get("task_result_packet") or {}
     route = str(route_result.get("route") or "direct")
+    sendback_packet = build_manager_sendback_packet(route_result)
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -246,6 +296,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "writeback_policy": build_writeback_policy(route_result),
         "writeback_plan": writeback_plan,
         "writeback_stub": writeback_stub,
+        "manager_sendback_packet": sendback_packet,
         "degrade_history": route_result.get("degrade_history") or [],
         "sendback_count": int(route_result.get("sendback_count") or 0),
         "artifact_lifecycle": route_result.get("artifact_lifecycle") or [],
