@@ -37,6 +37,10 @@ def main() -> None:
     guide.write_text("guide hello old world\n", encoding="utf-8")
     (repo_root / "check.py").write_text("print('ok')\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
+    src_dir = repo_root / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+    (src_dir / "main.py").write_text("def main():\n    return 'ok'\n", encoding="utf-8")
+    (src_dir / "worker.py").write_text("def work():\n    return 1\n", encoding="utf-8")
 
     try:
         executor = CodingExecutor(temp_dir)
@@ -66,6 +70,11 @@ def main() -> None:
         _assert(result.get("repo_path") == str(repo_root), "coding executor should return repo path")
         _assert(isinstance(result.get("deliverables"), list) and result.get("deliverables"), "coding executor should expose deliverables")
         _assert(isinstance(result.get("repo_scan"), dict) and result.get("repo_scan"), "coding executor should expose repo_scan")
+        _assert("pyproject.toml" in (result.get("repo_scan", {}).get("manifest_files") or []), "repo scan should expose manifest files")
+        _assert("src/main.py" in (result.get("repo_scan", {}).get("entrypoint_hints") or []), "repo scan should expose entrypoint hints")
+        _assert("src" in (result.get("repo_scan", {}).get("source_dirs") or []), "repo scan should expose source dirs")
+        _assert(result.get("repo_scan", {}).get("language_hint") == "python", "repo scan should infer python language hint")
+        _assert(any(x.endswith("worker.py") for x in (result.get("repo_scan", {}).get("discovered_code_files") or [])), "repo scan should discover nested code files")
         _assert(isinstance(result.get("target_files"), list) and result.get("target_files"), "coding executor should expose target_files")
         _assert(isinstance(result.get("review_packet"), dict), "coding executor should expose formal review packet")
         _assert(result.get("review_packet", {}).get("verdict") == "accepted", "successful coding run should emit accepted review verdict")
