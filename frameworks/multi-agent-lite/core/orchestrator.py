@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
+from datetime import datetime, timezone
 import json
 
 from .delivery_synthesizer import synthesize_delivery
@@ -20,6 +21,10 @@ from .state_machine import assert_transition
 from .task_store import TaskStore
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 @dataclass
 class Orchestrator:
     root: Path
@@ -30,6 +35,105 @@ class Orchestrator:
         self.dispatcher = Dispatcher(self.router)
         self.reviewer = ReviewEngine()
         self.executor = self._build_executor()
+
+    def _runtime_dir(self) -> Path:
+        path = self.root / "runtime" / "orchestrator"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _trace_dir(self) -> Path:
+        path = self._runtime_dir() / "traces"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _event_registry_path(self) -> Path:
+        return self._runtime_dir() / "registry.jsonl"
+
+    def _snapshot_for_trace(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        last_review = task.get("last_review") or {}
+        return {
+            "task_id": task.get("task_id"),
+            "title": task.get("title"),
+            "goal": task.get("goal"),
+            "task_type": task.get("task_type"),
+            "priority": task.get("priority"),
+            "status": task.get("status"),
+            "owner": task.get("owner"),
+            "planning_profile": task.get("planning_profile"),
+            "orchestration_mode": task.get("orchestration_mode"),
+            "sendback_count": task.get("sendback_count", 0),
+            "rerun_execution_only": bool(task.get("rerun_execution_only")),
+            "dispatch_summary": task.get("dispatch_summary") or {},
+            "delivery_status": task.get("delivery_status"),
+            "delivery_summary": task.get("delivery_summary") or "",
+            "deliverables": list(task.get("deliverables") or []),
+            "artifacts": list(task.get("artifacts") or []),
+            "degrade_history": list(task.get("degrade_history") or []),
+            "writeback_hint": task.get("writeback_hint") or {"level": 0, "targets": []},
+            "last_review": {
+                "review_id": last_review.get("review_id"),
+                "decision": last_review.get("decision"),
+                "next_action": last_review.get("next_action"),
+                "recommended_sendback_target": last_review.get("recommended_sendback_target"),
+                "delivery_status": last_review.get("delivery_status"),
+                "blocking_gaps": list(last_review.get("blocking_gaps") or []),
+                "quality_signals": list(last_review.get("quality_signals") or []),
+                "residual_risks": list(last_review.get("residual_risks") or []),
+            },
+            "task_result_packet": task.get("task_result_packet"),
+            "subtasks": [
+                {
+                    "subtask_id": st.get("subtask_id"),
+                    "role": st.get("assigned_role"),
+                    "model": st.get("assigned_model"),
+                    "dispatch_status": st.get("dispatch_status"),
+                    "rerun_needed": bool(st.get("rerun_needed")),
+                    "rerun_reason": list(st.get("rerun_reason") or []),
+                    "objective": st.get("objective"),
+                    "result_summary": (st.get("result") or {}).get("summary"),
+                    "result_needs_input": list((st.get("result") or {}).get("needs_input") or []),
+                    "result_risks": list((st.get("result") or {}).get("risks") or []),
+                }
+                for st in (task.get("subtasks") or [])
+            ],
+            "history_tail": list((task.get("history") or [])[-10:]),
+        }
+
+    def _append_trace_event(self, task: Dict[str, Any], event: str, note: str = "") -> Dict[str, Any]:
+        snapshot = self._snapshot_for_trace(task)
+        row = {
+            "ts": _utc_now(),
+            "event": event,
+            "task_id": task.get("task_id"),
+            "status": task.get("status"),
+            "task_type": task.get("task_type"),
+            "priority": task.get("priority"),
+            "orchestration_mode": task.get("orchestration_mode"),
+            "delivery_status": task.get("delivery_status"),
+            "sendback_count": task.get("sendback_count", 0),
+            "note": note,
+            "snapshot": snapshot,
+        }
+        trace_path = self._trace_dir() / f"{task['task_id']}.jsonl"
+        with trace_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with self._event_registry_path().open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "ts": row["ts"],
+                "event": event,
+                "task_id": task.get("task_id"),
+                "status": task.get("status"),
+                "task_type": task.get("task_type"),
+                "priority": task.get("priority"),
+                "orchestration_mode": task.get("orchestration_mode"),
+                "delivery_status": task.get("delivery_status"),
+                "sendback_count": task.get("sendback_count", 0),
+                "note": note,
+                "trace_path": str(trace_path),
+            }, ensure_ascii=False) + "\n")
+        task["orchestrator_trace_path"] = str(trace_path)
+        task["orchestrator_last_event"] = event
+        return task
 
     def _build_executor(self):
         mock = MockExecutor(self.root)
@@ -161,6 +265,7 @@ class Orchestrator:
             "reviews": [],
         }
         self.store.append_history(task, {"event": "task_created", "owner": "manager"})
+        task = self._append_trace_event(task, "task_created", note="task created")
         self.store.save(task)
         return task
 
@@ -175,6 +280,7 @@ class Orchestrator:
             "to": target,
             "note": note,
         })
+        task = self._append_trace_event(task, "state_changed", note=f"{prev} -> {target}: {note}".strip())
         self.store.save(task)
         return task
 
@@ -191,6 +297,7 @@ class Orchestrator:
             "event": "plan_built",
             "subtask_count": len(task["subtasks"]),
         })
+        task = self._append_trace_event(task, "plan_built", note=f"subtask_count={len(task['subtasks'])}")
         self.store.save(task)
         return task
 
@@ -215,6 +322,7 @@ class Orchestrator:
             "event": "task_dispatched",
             "summary": task["dispatch_summary"],
         })
+        task = self._append_trace_event(task, "task_dispatched", note="subtasks dispatched")
         self.store.save(task)
         return task
 
@@ -237,6 +345,7 @@ class Orchestrator:
             "event": "execution_completed",
             "completed_subtasks": len(task.get("subtasks", [])),
         })
+        task = self._append_trace_event(task, "execution_completed", note="execution pass completed")
         self.store.save(task)
         return task
 
@@ -258,31 +367,9 @@ class Orchestrator:
             "event": "review_completed",
             "decision": review["decision"],
             "next_action": review["next_action"],
+            "delivery_status": task["delivery_status"],
         })
-        prev = task["status"]
-        if review["decision"] == "approved":
-            target = "DONE"
-        else:
-            task["sendback_count"] = int(task.get("sendback_count", 0)) + 1
-            max_rounds = int((task.get("execution_budget") or {}).get("max_sendback_rounds", 2))
-            if task["sendback_count"] >= max_rounds:
-                task = self._apply_degrade(task, reason="sendback threshold reached")
-            next_action = review.get("next_action", "PLAN")
-            if next_action == "BLOCKED":
-                target = "BLOCKED"
-            elif next_action == "EXECUTING":
-                task = self._mark_execution_rerun(task, review)
-                target = "READY"
-            else:
-                target = "PLAN"
         task["task_result_packet"] = self._build_review_augmented_result(task, review)
-        assert_transition(prev, target)
-        task["status"] = target
-        self.store.append_history(task, {
-            "event": "state_changed",
-            "from": prev,
-            "to": target,
-            "note": "review outcome applied",
-        })
+        task = self._append_trace_event(task, "review_completed", note=f"decision={review['decision']} next_action={review['next_action']}")
         self.store.save(task)
         return task

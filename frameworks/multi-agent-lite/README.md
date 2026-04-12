@@ -39,6 +39,7 @@ As of the current first-cut runtime, `multi-agent-lite` already supports:
 - stale / active evidence split
 - `artifact_lifecycle` tracking across reruns
 - unified validation entrypoint
+- task-level orchestrator trace artifacts and registry rows for collaboration observability
 
 ---
 
@@ -161,6 +162,10 @@ Additional adapter validation:
 Outer framework validation:
 
 - `python3 frameworks/multi-agent-lite/validate_outer_framework.py`
+
+Orchestrator trace validation:
+
+- `python3 frameworks/multi-agent-lite/validate_orchestrator_trace.py`
 
 Backward-compatible wrapper:
 
