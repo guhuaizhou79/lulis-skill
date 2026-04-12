@@ -146,6 +146,8 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
     verdict = str(sendback_packet.get("verdict") or "")
     coding_exec = route_result.get("coding_executor_result") or {}
     review_packet = coding_exec.get("review_packet") or {}
+    validation_policy = coding_exec.get("validation_policy") or review_packet.get("validation_policy") or {}
+    narrowing_hints = coding_exec.get("retry_narrowing_hints") or review_packet.get("retry_narrowing_hints") or {}
     why = sendback_packet.get("why") or {}
     blockers = _dedupe_strings((why.get("blockers") or []) + (review_packet.get("blocking_reasons") or []))
     needs_input = _dedupe_strings(why.get("needs_input") or [])
@@ -165,6 +167,8 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
     next_allowed_actions = list(payload.get("allowed_actions") or [])
     next_validation_commands = list(payload.get("validation_commands") or [])
     next_files = list(payload.get("files_of_interest") or [])
+    next_symbols = [str(x).strip() for x in (narrowing_hints.get("target_symbols") or []) if str(x).strip()]
+    next_validation_focus = [str(x).strip() for x in (narrowing_hints.get("validation_focus") or []) if str(x).strip()]
 
     retry_notes: List[str] = []
     if blockers:
@@ -175,17 +179,26 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
         retry_notes.append(f"Re-check touched files first: {files_changed[:5]}")
     if repeated_same_verdict:
         retry_notes.append("Repeated same-verdict sendback detected; tighten scope and avoid repeating the prior attempt.")
+    if validation_policy.get("change_disposition_hint") == "revert_suggested":
+        retry_notes.append("Previous validation suggests reverting or reworking the smallest failing code slice before retry.")
 
     next_goal_parts = [str(payload.get("goal") or "").strip()]
     if verdict == "needs_replan":
         next_goal_parts.append("Replan the coding run narrowly around the last failed validation/review signals.")
     elif verdict == "blocked":
         next_goal_parts.append("Unblock missing inputs or reduce scope before retrying coding execution.")
+    if next_symbols:
+        next_goal_parts.append(f"Prefer symbol-level focus: {next_symbols[:5]}.")
+    if next_validation_focus:
+        next_goal_parts.append(f"Keep validation focus on: {next_validation_focus[:5]}.")
     if retry_notes:
         next_goal_parts.append(" ".join(retry_notes))
     next_goal = " ".join(part for part in next_goal_parts if part).strip()
 
-    if sendback_packet.get("next_executor_payload_hints", {}).get("tighten_target_files") and files_changed:
+    narrowed_files = [str(x).strip() for x in (narrowing_hints.get("target_files") or []) if str(x).strip()]
+    if narrowed_files:
+        next_files = _dedupe_strings(narrowed_files + next_files)
+    elif sendback_packet.get("next_executor_payload_hints", {}).get("tighten_target_files") and files_changed:
         normalized_files: List[str] = []
         repo_path = str(payload.get("repo_path") or "").strip()
         repo_prefix = repo_path.rstrip("/") + "/" if repo_path else ""
@@ -219,6 +232,8 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
         "constraints": next_constraints,
         "acceptance": next_acceptance,
         "files_of_interest": next_files,
+        "target_symbols": next_symbols,
+        "validation_focus": next_validation_focus,
         "validation_expectations": _dedupe_strings(list(payload.get("validation_expectations") or []) + retry_notes),
         "validation_commands": next_validation_commands,
         "allowed_actions": next_allowed_actions,
@@ -242,11 +257,16 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
             "rollback_hint": sendback_packet.get("rollback_hint") or review_packet.get("rollback_hint") or "",
             "retry_strategy": sendback_packet.get("retry_strategy") or "",
         },
+        "executor_feedback": {
+            "validation_policy": validation_policy,
+            "retry_narrowing_hints": narrowing_hints,
+        },
         "escalation_hint": escalation,
         "builder_meta": {
             "source": "outer_framework.sendback_payload_builder",
             "history_entries_considered": len(history),
             "repeated_same_verdict": repeated_same_verdict,
+            "used_executor_narrowing_hints": bool(narrowed_files or next_symbols or next_validation_focus),
         },
     }
 

@@ -120,6 +120,9 @@ def main() -> None:
         _assert(isinstance(failing_result.get("next_executor_payload"), dict), "failed coding run should emit next executor payload draft")
         _assert(failing_result.get("next_executor_payload", {}).get("sendback_context", {}).get("verdict") == "needs_replan", "next payload should carry sendback verdict context")
         _assert("README.md" in (failing_result.get("next_executor_payload", {}).get("files_of_interest") or []), "next payload should tighten around changed files when available")
+        _assert(isinstance(failing_result.get("next_executor_payload", {}).get("executor_feedback"), dict), "next payload should carry executor feedback")
+        _assert(isinstance(failing_result.get("next_executor_payload", {}).get("validation_focus"), list), "next payload should carry validation focus list")
+        _assert(failing_result.get("next_executor_payload", {}).get("builder_meta", {}).get("used_executor_narrowing_hints") is True, "next payload should report executor narrowing hint usage")
         _assert(isinstance(failing_result.get("rerun_gate"), dict), "failed coding run should expose rerun gate")
         _assert(failing_result.get("rerun_gate", {}).get("eligible") is True, "validation-backed replan should be eligible for rerun gating")
         _assert(failing_result.get("rerun_gate", {}).get("decision") == "allow_rerun", "first narrowed replan should allow rerun")
@@ -243,6 +246,8 @@ def main() -> None:
                 "coding_review_packet": failing_result.get("coding_executor_result", {}).get("review_packet"),
                 "manager_sendback_packet": failing_result.get("manager_sendback_packet"),
                 "next_executor_payload": failing_result.get("next_executor_payload"),
+                "coding_executor_validation_policy": failing_result.get("coding_executor_result", {}).get("validation_policy"),
+                "coding_executor_retry_narrowing_hints": failing_result.get("coding_executor_result", {}).get("retry_narrowing_hints"),
                 "rerun_gate": failing_result.get("rerun_gate"),
                 "rerun_request": failing_result.get("rerun_request"),
                 "rerun_dispatch": failing_result.get("rerun_dispatch"),
