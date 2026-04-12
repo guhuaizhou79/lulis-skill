@@ -247,6 +247,65 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
     }
 
 
+def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    next_payload = route_result.get("next_executor_payload")
+    sendback_packet = route_result.get("manager_sendback_packet") or {}
+    if not next_payload or not sendback_packet:
+        return None
+
+    sendback_context = next_payload.get("sendback_context") or {}
+    escalation_hint = next_payload.get("escalation_hint") or {}
+    verdict = str(sendback_context.get("verdict") or sendback_packet.get("verdict") or "")
+    sendback_count = int(sendback_context.get("sendback_count") or sendback_packet.get("sendback_count") or 0)
+    blockers = _dedupe_strings(sendback_context.get("blockers") or [])
+    needs_input = _dedupe_strings(sendback_context.get("needs_input") or [])
+    validation_commands = [str(x).strip() for x in (next_payload.get("validation_commands") or []) if str(x).strip()]
+    repeated_same_verdict = bool((next_payload.get("builder_meta") or {}).get("repeated_same_verdict"))
+
+    if blockers or needs_input:
+        return {
+            "eligible": False,
+            "decision": "hold",
+            "reason": "missing input or blockers must be resolved before rerun",
+            "required_actions": _dedupe_strings(blockers + needs_input),
+            "rerun_mode": "none",
+            "manager_review_required": True,
+        }
+
+    if not validation_commands:
+        return {
+            "eligible": False,
+            "decision": "hold",
+            "reason": "validation commands missing; rerun would not be review-safe",
+            "required_actions": ["provide or clarify validation commands before rerun"],
+            "rerun_mode": "none",
+            "manager_review_required": True,
+        }
+
+    rerun_mode = "narrow_retry"
+    if verdict == "blocked":
+        rerun_mode = "blocked_retry_after_unblock"
+
+    manager_review_required = False
+    if escalation_hint or repeated_same_verdict or sendback_count >= 3:
+        manager_review_required = True
+        rerun_mode = "manager_review_before_retry"
+
+    decision = "allow_rerun" if not manager_review_required else "review_then_rerun"
+    reason = "rerun payload is sufficiently narrowed and validation-backed"
+    if manager_review_required:
+        reason = "repeated sendback pattern detected; manager review required before rerun"
+
+    return {
+        "eligible": True,
+        "decision": decision,
+        "reason": reason,
+        "required_actions": [],
+        "rerun_mode": rerun_mode,
+        "manager_review_required": manager_review_required,
+    }
+
+
 
 def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
     task_type = str(payload.get("task_type") or "general")
@@ -438,6 +497,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
     route = str(route_result.get("route") or "direct")
     sendback_packet = route_result.get("manager_sendback_packet")
     next_payload = route_result.get("next_executor_payload")
+    rerun_gate = route_result.get("rerun_gate")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -456,6 +516,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "writeback_stub": writeback_stub,
         "manager_sendback_packet": sendback_packet,
         "next_executor_payload": next_payload,
+        "rerun_gate": rerun_gate,
         "sendback_history": route_result.get("sendback_history") or [],
         "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
@@ -538,9 +599,11 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["sendback_count"] = len(history)
             route_result["sendback_history_path"] = _store_sendback_history(root, task_key, history)
             route_result["next_executor_payload"] = build_next_executor_payload(payload, route_result)
+            route_result["rerun_gate"] = build_rerun_gate(route_result)
         else:
             route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
             route_result["next_executor_payload"] = None
+            route_result["rerun_gate"] = None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)

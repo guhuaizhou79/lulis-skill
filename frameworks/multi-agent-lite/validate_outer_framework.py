@@ -120,6 +120,9 @@ def main() -> None:
         _assert(isinstance(failing_result.get("next_executor_payload"), dict), "failed coding run should emit next executor payload draft")
         _assert(failing_result.get("next_executor_payload", {}).get("sendback_context", {}).get("verdict") == "needs_replan", "next payload should carry sendback verdict context")
         _assert("README.md" in (failing_result.get("next_executor_payload", {}).get("files_of_interest") or []), "next payload should tighten around changed files when available")
+        _assert(isinstance(failing_result.get("rerun_gate"), dict), "failed coding run should expose rerun gate")
+        _assert(failing_result.get("rerun_gate", {}).get("eligible") is True, "validation-backed replan should be eligible for rerun gating")
+        _assert(failing_result.get("rerun_gate", {}).get("decision") == "allow_rerun", "first narrowed replan should allow rerun")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
@@ -130,6 +133,9 @@ def main() -> None:
         _assert(len(failing_result_second.get("sendback_history") or []) == 2, "second failing run should append sendback history")
         _assert(isinstance(failing_result_second.get("next_executor_payload"), dict), "second failing run should still emit next executor payload draft")
         _assert(failing_result_second.get("next_executor_payload", {}).get("builder_meta", {}).get("repeated_same_verdict") is True, "second failing run should detect repeated same-verdict pattern")
+        _assert(isinstance(failing_result_second.get("rerun_gate"), dict), "second failing run should still expose rerun gate")
+        _assert(failing_result_second.get("rerun_gate", {}).get("decision") == "review_then_rerun", "repeated sendback should require manager review before rerun")
+        _assert(failing_result_second.get("rerun_gate", {}).get("manager_review_required") is True, "repeated sendback should set manager review gate")
 
         staged_payload = {
             "title": "staged automation",
@@ -201,6 +207,7 @@ def main() -> None:
                 "coding_review_packet": failing_result.get("coding_executor_result", {}).get("review_packet"),
                 "manager_sendback_packet": failing_result.get("manager_sendback_packet"),
                 "next_executor_payload": failing_result.get("next_executor_payload"),
+                "rerun_gate": failing_result.get("rerun_gate"),
                 "sendback_history": failing_result.get("sendback_history"),
                 "sendback_history_path": failing_result.get("sendback_history_path"),
                 "run_id": failing_result.get("run_id"),
@@ -209,6 +216,7 @@ def main() -> None:
                 "normalized_status": failing_result_second.get("normalized_status"),
                 "manager_sendback_packet": failing_result_second.get("manager_sendback_packet"),
                 "next_executor_payload": failing_result_second.get("next_executor_payload"),
+                "rerun_gate": failing_result_second.get("rerun_gate"),
                 "sendback_history": failing_result_second.get("sendback_history"),
                 "sendback_history_path": failing_result_second.get("sendback_history_path"),
                 "run_id": failing_result_second.get("run_id"),
