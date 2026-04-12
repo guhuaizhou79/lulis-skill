@@ -147,6 +147,32 @@ def main() -> None:
         _assert(failing_result_second.get("rerun_dispatch", {}).get("status") == "awaiting_manager_review", "review-gated rerun dispatch should await manager review")
         _assert(Path(failing_result_second.get("rerun_dispatch", {}).get("path")).exists(), "review-gated rerun dispatch artifact should exist on disk")
 
+        blocked_repo = test_root / "blocked-code-repo"
+        blocked_repo.mkdir(parents=True, exist_ok=True)
+        (blocked_repo / "README.md").write_text("hello old world\n", encoding="utf-8")
+        blocked_payload = {
+            "title": "blocked coding validation",
+            "goal": "exercise blocked review mapping for coding validation gating",
+            "task_type": "code",
+            "priority": "high",
+            "repo_path": str(blocked_repo),
+            "files_of_interest": ["README.md"],
+            "allowed_actions": ["read", "replace", "validate"],
+            "replace_old": "hello old world",
+            "replace_new": "hello blocked world",
+            "validation_commands": ["echo blocked command not allowed"],
+            "acceptance": [
+                "surface blocked outer status when validation command is unsafe",
+                "emit review-first change disposition policy",
+            ],
+        }
+        blocked_result = run_outer_framework(test_root, blocked_payload)
+        _assert(blocked_result.get("normalized_status") == "blocked", "unsafe validation command should map to blocked")
+        _assert(isinstance(blocked_result.get("change_disposition_policy"), dict), "blocked run should expose change disposition policy")
+        _assert(blocked_result.get("change_disposition_policy", {}).get("decision") == "review_then_revert_or_keep", "blocked run with changed files should require revert-or-keep review")
+        _assert(isinstance(blocked_result.get("rerun_gate"), dict), "blocked run should still expose rerun gate")
+        _assert(blocked_result.get("rerun_gate", {}).get("eligible") is False, "blocked run without safe validation should hold rerun")
+
         staged_payload = {
             "title": "staged automation",
             "goal": "produce a delivery-ready artifact with review and compact result",
@@ -231,9 +257,18 @@ def main() -> None:
                 "rerun_gate": failing_result_second.get("rerun_gate"),
                 "rerun_request": failing_result_second.get("rerun_request"),
                 "rerun_dispatch": failing_result_second.get("rerun_dispatch"),
+                "change_disposition_policy": failing_result_second.get("change_disposition_policy"),
                 "sendback_history": failing_result_second.get("sendback_history"),
                 "sendback_history_path": failing_result_second.get("sendback_history_path"),
                 "run_id": failing_result_second.get("run_id"),
+            },
+            "coding_blocked": {
+                "route": blocked_result.get("route"),
+                "normalized_status": blocked_result.get("normalized_status"),
+                "manager_sendback_packet": blocked_result.get("manager_sendback_packet"),
+                "rerun_gate": blocked_result.get("rerun_gate"),
+                "change_disposition_policy": blocked_result.get("change_disposition_policy"),
+                "run_id": blocked_result.get("run_id"),
             },
             "staged": {
                 "route": staged_result.get("route"),

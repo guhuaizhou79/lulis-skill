@@ -234,6 +234,10 @@ def build_next_executor_payload(payload: Dict[str, Any], route_result: Dict[str,
             "needs_input": needs_input,
             "risks": risks,
             "test_results": test_results,
+            "unsafe_validation_signals": [
+                x for x in risks
+                if "blocked" in x.lower() or "safe prefixes" in x.lower()
+            ],
             "files_changed": files_changed,
             "rollback_hint": sendback_packet.get("rollback_hint") or review_packet.get("rollback_hint") or "",
             "retry_strategy": sendback_packet.get("retry_strategy") or "",
@@ -261,6 +265,9 @@ def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
     needs_input = _dedupe_strings(sendback_context.get("needs_input") or [])
     validation_commands = [str(x).strip() for x in (next_payload.get("validation_commands") or []) if str(x).strip()]
     repeated_same_verdict = bool((next_payload.get("builder_meta") or {}).get("repeated_same_verdict"))
+    test_results = _dedupe_strings(sendback_context.get("test_results") or [])
+    unsafe_validation_signals = _dedupe_strings(sendback_context.get("unsafe_validation_signals") or [])
+    unsafe_validation_blocked = bool(unsafe_validation_signals) or any("validation command blocked" in x.lower() or "not in safe prefixes" in x.lower() for x in test_results)
 
     if blockers or needs_input:
         return {
@@ -268,6 +275,16 @@ def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
             "decision": "hold",
             "reason": "missing input or blockers must be resolved before rerun",
             "required_actions": _dedupe_strings(blockers + needs_input),
+            "rerun_mode": "none",
+            "manager_review_required": True,
+        }
+
+    if unsafe_validation_blocked:
+        return {
+            "eligible": False,
+            "decision": "hold",
+            "reason": "validation path is currently unsafe; manager must replace or approve a safe validation command set",
+            "required_actions": ["replace blocked validation commands with safe, reviewable commands before rerun"],
             "rerun_mode": "none",
             "manager_review_required": True,
         }
@@ -303,6 +320,44 @@ def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
         "required_actions": [],
         "rerun_mode": rerun_mode,
         "manager_review_required": manager_review_required,
+    }
+
+
+def build_change_disposition_policy(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    coding_exec = route_result.get("coding_executor_result") or {}
+    sendback_packet = route_result.get("manager_sendback_packet") or {}
+    rerun_gate = route_result.get("rerun_gate") or {}
+    review_packet = coding_exec.get("review_packet") or {}
+    files_changed = _dedupe_strings(coding_exec.get("files_changed") or sendback_packet.get("files_changed") or [])
+    verdict = str(review_packet.get("verdict") or sendback_packet.get("verdict") or "")
+    file_handling = str(sendback_packet.get("file_handling") or "")
+    rollback_hint = str(sendback_packet.get("rollback_hint") or review_packet.get("rollback_hint") or "")
+
+    if not files_changed:
+        return {
+            "decision": "no_action",
+            "reason": "no changed files to keep or revert",
+            "files": [],
+            "rollback_hint": rollback_hint,
+            "manager_review_required": bool(rerun_gate.get("manager_review_required")),
+        }
+
+    decision = "keep_for_review"
+    reason = "changed files should remain available for manager review and narrowed rerun"
+
+    if verdict == "blocked" and file_handling == "review_and_possibly_revert_changed_files_before_retry":
+        decision = "review_then_revert_or_keep"
+        reason = "blocked run touched files; manager should decide whether to revert before retry"
+    elif verdict == "needs_replan" and file_handling == "keep_changed_files_for_review":
+        decision = "keep_for_review"
+        reason = "replan case should keep changed files visible for review before rerun"
+
+    return {
+        "decision": decision,
+        "reason": reason,
+        "files": files_changed,
+        "rollback_hint": rollback_hint,
+        "manager_review_required": bool(rerun_gate.get("manager_review_required")),
     }
 
 
@@ -555,6 +610,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
     rerun_gate = route_result.get("rerun_gate")
     rerun_request = route_result.get("rerun_request")
     rerun_dispatch = route_result.get("rerun_dispatch")
+    change_disposition_policy = route_result.get("change_disposition_policy")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -576,6 +632,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "rerun_gate": rerun_gate,
         "rerun_request": rerun_request,
         "rerun_dispatch": rerun_dispatch,
+        "change_disposition_policy": change_disposition_policy,
         "sendback_history": route_result.get("sendback_history") or [],
         "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
@@ -661,12 +718,14 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["rerun_gate"] = build_rerun_gate(route_result)
             route_result["rerun_request"] = build_rerun_request(payload, route_result)
             route_result["rerun_dispatch"] = consume_rerun_request(root, route_result)
+            route_result["change_disposition_policy"] = build_change_disposition_policy(route_result)
         else:
             route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
             route_result["next_executor_payload"] = None
             route_result["rerun_gate"] = None
             route_result["rerun_request"] = None
             route_result["rerun_dispatch"] = None
+            route_result["change_disposition_policy"] = None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)
