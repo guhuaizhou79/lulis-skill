@@ -108,6 +108,8 @@ def main() -> None:
         }
         failing_result = run_outer_framework(test_root, failing_payload)
         _assert(failing_result.get("route") == "multi_agent_lite", "failing code task should still route to staged path")
+        _assert(isinstance(failing_result.get("coding_executor_result", {}).get("review_packet"), dict), "failing code task should expose coding review packet")
+        _assert(failing_result.get("coding_executor_result", {}).get("review_packet", {}).get("verdict") == "needs_replan", "failed validation should emit needs_replan review verdict")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
@@ -180,6 +182,7 @@ def main() -> None:
                 "normalized_status": failing_result.get("normalized_status"),
                 "writeback_policy": failing_result.get("writeback_policy"),
                 "coding_executor_result": failing_result.get("coding_executor_result"),
+                "coding_review_packet": failing_result.get("coding_executor_result", {}).get("review_packet"),
                 "run_id": failing_result.get("run_id"),
             },
             "staged": {

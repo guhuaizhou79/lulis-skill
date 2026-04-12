@@ -128,11 +128,15 @@ def normalize_outer_status(route_result: Dict[str, Any]) -> str:
     packet = route_result.get("task_result_packet") or {}
     packet_status = str(packet.get("status") or "")
     coding_exec = route_result.get("coding_executor_result") or {}
+    review_packet = coding_exec.get("review_packet") or {}
+    review_verdict = str(review_packet.get("verdict") or "")
     coding_status = str(coding_exec.get("status") or "")
     coding_test_results = [str(x) for x in (coding_exec.get("test_results") or []) if str(x).strip()]
 
-    if coding_status == "blocked":
+    if review_verdict == "blocked" or coding_status == "blocked":
         return "blocked"
+    if review_verdict == "needs_replan":
+        return "needs_replan"
     if any("blocked" in x.lower() for x in coding_test_results):
         return "blocked"
     if any("failed" in x.lower() for x in coding_test_results):
@@ -282,8 +286,6 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "route_explanation": route_explanation,
         "title": payload.get("title"),
         "task_type": payload.get("task_type"),
-        "final_status": route_result.get("final_status", "DONE"),
-        "normalized_status": normalize_outer_status(route_result),
         "task_id": (route_result.get("raw_task") or {}).get("task_id") if isinstance(route_result.get("raw_task"), dict) else route_result.get("task_id"),
     }
     if is_coding_task({
@@ -295,12 +297,17 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         run_trace["coding_executor_artifact"] = coding_exec.get("artifact")
         route_result["coding_executor_result"] = coding_exec.get("result")
         coding_result = coding_exec.get("result") or {}
+        review_packet = coding_result.get("review_packet") or {}
+        review_verdict = str(review_packet.get("verdict") or "")
         coding_status = str(coding_result.get("status") or "")
         coding_test_results = [str(x) for x in (coding_result.get("test_results") or []) if str(x).strip()]
-        if coding_status == "blocked" or any("blocked" in x.lower() for x in coding_test_results):
+        if review_verdict == "blocked" or coding_status == "blocked" or any("blocked" in x.lower() for x in coding_test_results):
             route_result["final_status"] = "BLOCKED"
-        elif any("failed" in x.lower() for x in coding_test_results):
+        elif review_verdict == "needs_replan" or any("failed" in x.lower() for x in coding_test_results):
             route_result["final_status"] = "PLAN"
+
+    run_trace["final_status"] = route_result.get("final_status", "DONE")
+    run_trace["normalized_status"] = normalize_outer_status(route_result)
 
     _append_registry_row(root, run_trace)
     writeback_plan = build_writeback_plan({
