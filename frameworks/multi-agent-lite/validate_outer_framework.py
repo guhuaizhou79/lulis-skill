@@ -123,6 +123,8 @@ def main() -> None:
         _assert(isinstance(failing_result.get("rerun_gate"), dict), "failed coding run should expose rerun gate")
         _assert(failing_result.get("rerun_gate", {}).get("eligible") is True, "validation-backed replan should be eligible for rerun gating")
         _assert(failing_result.get("rerun_gate", {}).get("decision") == "allow_rerun", "first narrowed replan should allow rerun")
+        _assert(isinstance(failing_result.get("rerun_request"), dict), "eligible rerun should emit rerun request object")
+        _assert(failing_result.get("rerun_request", {}).get("request_mode") == "ready", "first rerun request should be ready for executor consumption")
         _assert(failing_result.get("normalized_status") in {"needs_replan", "blocked", "failed"}, "failed coding validation should not remain completed")
         _assert(failing_result.get("normalized_status") != "completed", "failed coding validation must not remain completed")
         _assert(failing_result.get("writeback_policy", {}).get("should_write_summary") is False, "failed coding validation should not write summary")
@@ -136,6 +138,8 @@ def main() -> None:
         _assert(isinstance(failing_result_second.get("rerun_gate"), dict), "second failing run should still expose rerun gate")
         _assert(failing_result_second.get("rerun_gate", {}).get("decision") == "review_then_rerun", "repeated sendback should require manager review before rerun")
         _assert(failing_result_second.get("rerun_gate", {}).get("manager_review_required") is True, "repeated sendback should set manager review gate")
+        _assert(isinstance(failing_result_second.get("rerun_request"), dict), "review-gated rerun should still emit formal rerun request")
+        _assert(failing_result_second.get("rerun_request", {}).get("request_mode") == "await_manager_review", "repeated sendback rerun request should wait for manager review")
 
         staged_payload = {
             "title": "staged automation",
@@ -208,6 +212,7 @@ def main() -> None:
                 "manager_sendback_packet": failing_result.get("manager_sendback_packet"),
                 "next_executor_payload": failing_result.get("next_executor_payload"),
                 "rerun_gate": failing_result.get("rerun_gate"),
+                "rerun_request": failing_result.get("rerun_request"),
                 "sendback_history": failing_result.get("sendback_history"),
                 "sendback_history_path": failing_result.get("sendback_history_path"),
                 "run_id": failing_result.get("run_id"),
@@ -217,6 +222,7 @@ def main() -> None:
                 "manager_sendback_packet": failing_result_second.get("manager_sendback_packet"),
                 "next_executor_payload": failing_result_second.get("next_executor_payload"),
                 "rerun_gate": failing_result_second.get("rerun_gate"),
+                "rerun_request": failing_result_second.get("rerun_request"),
                 "sendback_history": failing_result_second.get("sendback_history"),
                 "sendback_history_path": failing_result_second.get("sendback_history_path"),
                 "run_id": failing_result_second.get("run_id"),

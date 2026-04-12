@@ -306,6 +306,33 @@ def build_rerun_gate(route_result: Dict[str, Any]) -> Dict[str, Any] | None:
     }
 
 
+def build_rerun_request(payload: Dict[str, Any], route_result: Dict[str, Any]) -> Dict[str, Any] | None:
+    next_payload = route_result.get("next_executor_payload")
+    rerun_gate = route_result.get("rerun_gate") or {}
+    if not next_payload or not rerun_gate or not rerun_gate.get("eligible"):
+        return None
+
+    request_mode = "ready"
+    if rerun_gate.get("decision") == "review_then_rerun":
+        request_mode = "await_manager_review"
+
+    return {
+        "request_kind": "coding_executor_rerun",
+        "request_mode": request_mode,
+        "decision": rerun_gate.get("decision"),
+        "rerun_mode": rerun_gate.get("rerun_mode"),
+        "manager_review_required": bool(rerun_gate.get("manager_review_required")),
+        "title": payload.get("title"),
+        "repo_path": next_payload.get("repo_path") or payload.get("repo_path") or "",
+        "executor_payload": next_payload,
+        "source": {
+            "framework": "outer_framework_skeleton",
+            "sendback_count": route_result.get("sendback_count") or 0,
+            "normalized_status": normalize_outer_status(route_result),
+        },
+    }
+
+
 
 def classify_task_shape(payload: Dict[str, Any]) -> Dict[str, Any]:
     task_type = str(payload.get("task_type") or "general")
@@ -498,6 +525,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
     sendback_packet = route_result.get("manager_sendback_packet")
     next_payload = route_result.get("next_executor_payload")
     rerun_gate = route_result.get("rerun_gate")
+    rerun_request = route_result.get("rerun_request")
     result = {
         "framework": "outer_framework_skeleton",
         "run_id": run_trace.get("run_id"),
@@ -517,6 +545,7 @@ def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any],
         "manager_sendback_packet": sendback_packet,
         "next_executor_payload": next_payload,
         "rerun_gate": rerun_gate,
+        "rerun_request": rerun_request,
         "sendback_history": route_result.get("sendback_history") or [],
         "sendback_history_path": route_result.get("sendback_history_path"),
         "degrade_history": route_result.get("degrade_history") or [],
@@ -600,10 +629,12 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
             route_result["sendback_history_path"] = _store_sendback_history(root, task_key, history)
             route_result["next_executor_payload"] = build_next_executor_payload(payload, route_result)
             route_result["rerun_gate"] = build_rerun_gate(route_result)
+            route_result["rerun_request"] = build_rerun_request(payload, route_result)
         else:
             route_result["sendback_history_path"] = _sendback_runtime_dir(root).joinpath(f"{task_key}.json").as_posix() if history else None
             route_result["next_executor_payload"] = None
             route_result["rerun_gate"] = None
+            route_result["rerun_request"] = None
 
     run_trace["final_status"] = route_result.get("final_status", "DONE")
     run_trace["normalized_status"] = normalize_outer_status(route_result)
