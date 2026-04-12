@@ -362,15 +362,36 @@ class CodingExecutor:
             risks.append("replace_old not found in any selected target file; no replace applied")
         return files_changed, tests_run, test_results, risks
 
-    def _run_validation_commands(self, repo: Path, payload: Dict[str, Any]) -> tuple[List[str], List[str], List[str]]:
+    def _classify_validation_surface(self, cmd: str) -> str:
+        normalized = cmd.strip().lower()
+        if normalized.startswith(("python3 -m py_compile", "python -m py_compile")):
+            return "syntax"
+        if "import" in normalized and normalized.startswith(("python3 -c", "python -c")):
+            return "import"
+        if normalized.startswith("pytest"):
+            return "unit"
+        if normalized.startswith(("python3 -c", "python -c")) and "assert " in normalized:
+            return "unit"
+        return "project_command"
+
+    def _run_validation_commands(self, repo: Path, payload: Dict[str, Any]) -> tuple[List[str], List[str], List[Dict[str, Any]], List[str]]:
         commands = [str(x).strip() for x in (payload.get("validation_commands") or []) if str(x).strip()]
         tests_run: List[str] = []
         test_results: List[str] = []
+        validation_records: List[Dict[str, Any]] = []
         risks: List[str] = []
         for cmd in commands[:5]:
+            surface = self._classify_validation_surface(cmd)
             if not any(cmd.startswith(prefix) for prefix in SAFE_VALIDATE_PREFIXES):
                 tests_run.append(f"validation command blocked: {cmd}")
                 test_results.append("blocked")
+                validation_records.append({
+                    "surface": surface,
+                    "command": cmd,
+                    "status": "blocked",
+                    "rc": None,
+                    "snippet": "",
+                })
                 risks.append(f"validation command not in safe prefixes: {cmd}")
                 continue
             proc = subprocess.run(
@@ -385,9 +406,16 @@ class CodingExecutor:
             status = "passed" if proc.returncode == 0 else "failed"
             snippet = (proc.stdout or proc.stderr or "").strip()[:160]
             test_results.append(f"{status}: rc={proc.returncode} {snippet}".strip())
+            validation_records.append({
+                "surface": surface,
+                "command": cmd,
+                "status": status,
+                "rc": proc.returncode,
+                "snippet": snippet,
+            })
             if proc.returncode != 0:
                 risks.append(f"validation command failed: {cmd}")
-        return tests_run, test_results, risks
+        return tests_run, test_results, validation_records, risks
 
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         packet = build_coding_task_packet(payload)
@@ -432,7 +460,7 @@ class CodingExecutor:
         tests_run.extend(replace_tests)
         test_results.extend(replace_results)
 
-        validation_tests, validation_results, validation_risks = self._run_validation_commands(repo, payload)
+        validation_tests, validation_results, validation_records, validation_risks = self._run_validation_commands(repo, payload)
         tests_run.extend(validation_tests)
         test_results.extend(validation_results)
         risks.extend(validation_risks)
@@ -453,6 +481,7 @@ class CodingExecutor:
             draft_artifacts=draft_artifacts,
             tests_run=tests_run,
             test_results=test_results,
+            validation_records=validation_records,
             risks=risks,
             blockers=[],
             needs_input=[],

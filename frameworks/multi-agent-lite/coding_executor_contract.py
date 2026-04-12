@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-def _build_review_packet(*, files_changed: List[str] | None = None, target_files: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None) -> Dict[str, Any]:
+def _build_review_packet(*, files_changed: List[str] | None = None, target_files: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, validation_records: List[Dict[str, Any]] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None) -> Dict[str, Any]:
     files_changed = [str(x) for x in (files_changed or []) if str(x).strip()]
     target_files = [str(x) for x in (target_files or []) if str(x).strip()]
     tests_run = [str(x) for x in (tests_run or []) if str(x).strip()]
     test_results = [str(x) for x in (test_results or []) if str(x).strip()]
+    validation_records = [x for x in (validation_records or []) if isinstance(x, dict)]
     risks = [str(x) for x in (risks or []) if str(x).strip()]
     blockers = [str(x) for x in (blockers or []) if str(x).strip()]
     needs_input = [str(x) for x in (needs_input or []) if str(x).strip()]
@@ -56,6 +57,7 @@ def _build_review_packet(*, files_changed: List[str] | None = None, target_files
         "files_changed_count": len(files_changed),
         "targets_considered": target_files,
         "tests_considered": tests_run,
+        "validation_records": validation_records,
         "risk_count": len(risks),
         "blocking_reasons": blockers + needs_input,
         "rollback_hint": rollback_hint,
@@ -108,7 +110,7 @@ def build_empty_coding_result(packet: Dict[str, Any], reason: str) -> Dict[str, 
     }
 
 
-def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_changed: List[str] | None = None, target_files: List[str] | None = None, deliverables: List[str] | None = None, repo_scan: Dict[str, Any] | None = None, edit_plan: List[Dict[str, Any]] | None = None, draft_artifacts: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None, recommended_next_step: str = "") -> Dict[str, Any]:
+def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_changed: List[str] | None = None, target_files: List[str] | None = None, deliverables: List[str] | None = None, repo_scan: Dict[str, Any] | None = None, edit_plan: List[Dict[str, Any]] | None = None, draft_artifacts: List[str] | None = None, tests_run: List[str] | None = None, test_results: List[str] | None = None, validation_records: List[Dict[str, Any]] | None = None, risks: List[str] | None = None, blockers: List[str] | None = None, needs_input: List[str] | None = None, recommended_next_step: str = "") -> Dict[str, Any]:
     blockers = [str(x) for x in (blockers or []) if str(x).strip()]
     needs_input = [str(x) for x in (needs_input or []) if str(x).strip()]
     files_changed = [str(x) for x in (files_changed or []) if str(x).strip()]
@@ -124,6 +126,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         target_files=target_files,
         tests_run=tests_run,
         test_results=test_results,
+        validation_records=validation_records,
         risks=risks,
         blockers=blockers,
         needs_input=needs_input,
@@ -140,6 +143,7 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         "draft_artifacts": [str(x) for x in (draft_artifacts or []) if str(x).strip()],
         "tests_run": tests_run,
         "test_results": test_results,
+        "validation_records": [dict(x) for x in (validation_records or []) if isinstance(x, dict)],
         "risks": risks,
         "blockers": blockers,
         "needs_input": needs_input,

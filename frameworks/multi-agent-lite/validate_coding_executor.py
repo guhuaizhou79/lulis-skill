@@ -36,6 +36,7 @@ def main() -> None:
     guide = repo_root / "GUIDE.md"
     guide.write_text("guide hello old world\n", encoding="utf-8")
     (repo_root / "check.py").write_text("print('ok')\n", encoding="utf-8")
+    (repo_root / "test_sample.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
     (repo_root / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
     src_dir = repo_root / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -55,12 +56,16 @@ def main() -> None:
             ],
             "validation_expectations": [
                 "document validation path",
+                "capture validation surfaces",
             ],
             "validation_commands": [
+                "python3 -m py_compile src/main.py",
+                "python3 -c \"import sys; sys.path.insert(0, 'src'); import worker\"",
+                "python3 -c \"assert 1 == 1\"",
                 "python3 check.py",
             ],
             "allowed_actions": ["read", "append", "replace", "validate"],
-            "append_text": "<!-- controlled append marker -->",
+            "append_text": "# controlled append marker",
             "replace_old": "hello old world",
             "replace_new": "hello new world",
             "files_of_interest": [],
@@ -79,6 +84,13 @@ def main() -> None:
         _assert(isinstance(result.get("target_files"), list) and result.get("target_files"), "coding executor should expose target_files")
         _assert("src/worker.py" in (result.get("target_files") or []), "goal-aware targeting should include symbol-matched file")
         _assert(isinstance(result.get("review_packet"), dict), "coding executor should expose formal review packet")
+        _assert(isinstance(result.get("validation_records"), list) and result.get("validation_records"), "coding executor should expose structured validation records")
+        surfaces = [str(x.get("surface") or "") for x in (result.get("validation_records") or [])]
+        _assert("syntax" in surfaces, "validation records should include syntax surface")
+        _assert("import" in surfaces, "validation records should include import surface")
+        _assert("unit" in surfaces, "validation records should include unit surface")
+        _assert("project_command" in surfaces, "validation records should include project command surface")
+        _assert(isinstance(result.get("review_packet", {}).get("validation_records"), list), "review packet should carry validation records")
         _assert(result.get("review_packet", {}).get("verdict") == "accepted", "successful coding run should emit accepted review verdict")
         _assert(result.get("review_packet", {}).get("change_scope") == "multi_file", "multi-file coding run should be classified as multi_file")
         _assert(len(result.get("target_files") or []) >= 2, "coding executor should preserve multi-file target list")
