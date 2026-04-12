@@ -82,6 +82,7 @@ def main() -> None:
         _assert(coding_result.get("route") == "multi_agent_lite", "code task should route to staged path")
         _assert(isinstance(coding_result.get("coding_result_packet"), dict), "code task should expose coding_result_packet")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context"), dict), "coding result should include repo_context")
+        _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context", {}).get("repo_context"), dict), "coding result should include nested repo-aware context")
         _assert(isinstance(coding_result.get("coding_executor_result"), dict), "code task should expose delegated coding executor result")
 
         staged_payload = {

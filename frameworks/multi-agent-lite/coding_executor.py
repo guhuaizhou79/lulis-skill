@@ -227,6 +227,7 @@ class CodingExecutor:
 
         repo_scan = self._scan_repo(repo)
         target_files = self._candidate_files(repo, packet)
+        repo_scan["target_rationale"] = f"selected target files: {target_files[:5]}" if target_files else "no target files selected"
         edit_plan = self._build_edit_plan(packet, target_files)
         draft_artifacts = self._materialize_draft_artifacts(repo, packet, edit_plan)
         deliverables: List[str] = []

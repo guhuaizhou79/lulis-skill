@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List
 
 
 CODE_TASK_TYPES = {"code", "bugfix", "refactor", "repo_analysis"}
+MANIFEST_FILES = ["pyproject.toml", "package.json", "requirements.txt", "setup.py", "Cargo.toml", "go.mod"]
+ENTRYPOINT_HINTS = ["main.py", "app.py", "server.py", "index.ts", "index.js", "main.ts", "manage.py"]
 
 
 def is_coding_task(task: Dict[str, Any]) -> bool:
@@ -17,14 +20,70 @@ def is_coding_task(task: Dict[str, Any]) -> bool:
     return any(token in text for token in hints)
 
 
+def _detect_language(top_level: List[str]) -> str:
+    names = set(top_level)
+    if "pyproject.toml" in names or "requirements.txt" in names or "setup.py" in names:
+        return "python"
+    if "package.json" in names:
+        return "node"
+    if "Cargo.toml" in names:
+        return "rust"
+    if "go.mod" in names:
+        return "go"
+    return "unknown"
+
+
+def build_repo_context(repo_path: str, target_files: List[str] | None = None) -> Dict[str, Any]:
+    path = Path(str(repo_path or "").strip()) if str(repo_path or "").strip() else None
+    if not path or not path.exists() or not path.is_dir():
+        return {
+            "repo_path": str(repo_path or ""),
+            "top_level": [],
+            "manifest_files": [],
+            "entrypoint_hints": [],
+            "language_hint": "unknown",
+            "target_rationale": "repo unavailable",
+        }
+
+    top_level: List[str] = []
+    manifest_files: List[str] = []
+    entrypoints: List[str] = []
+    for child in sorted(path.iterdir(), key=lambda p: p.name):
+        if child.name.startswith("."):
+            continue
+        top_level.append(child.name)
+        if child.name in MANIFEST_FILES:
+            manifest_files.append(child.name)
+        if child.name in ENTRYPOINT_HINTS:
+            entrypoints.append(child.name)
+
+    targets = [str(x) for x in (target_files or []) if str(x).strip()]
+    rationale = "no explicit target files yet"
+    if targets:
+        rationale = f"current target files: {targets[:5]}"
+
+    return {
+        "repo_path": str(path),
+        "top_level": top_level[:20],
+        "manifest_files": manifest_files,
+        "entrypoint_hints": entrypoints,
+        "language_hint": _detect_language(top_level),
+        "target_rationale": rationale,
+    }
+
+
 def build_code_context_packet(task: Dict[str, Any]) -> Dict[str, Any]:
     constraints = [str(x) for x in (task.get("constraints") or []) if str(x).strip()]
     acceptance = [str(x) for x in (task.get("acceptance") or []) if str(x).strip()]
+    target_files = [str(x) for x in (task.get("files_of_interest") or []) if str(x).strip()]
+    repo_context = build_repo_context(str(task.get("repo_path") or ""), target_files)
     return {
         "task_type": str(task.get("task_type") or "general"),
         "goal": str(task.get("goal") or ""),
         "constraints": constraints,
         "acceptance": acceptance,
+        "target_files": target_files,
+        "repo_context": repo_context,
         "focus": {
             "needs_code_changes": True,
             "needs_repo_reading": True,
