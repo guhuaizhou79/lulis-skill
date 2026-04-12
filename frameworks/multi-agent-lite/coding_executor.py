@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 import json
+import re
 import subprocess
 
 from coding_executor_contract import (
@@ -106,6 +107,7 @@ class CodingExecutor:
         source_dirs = [name for name in SOURCE_DIR_HINTS if (repo / name).exists() and (repo / name).is_dir()]
         discovered_code_files = self._walk_repo_code_files(repo)
         language_hint = self._infer_language_hint(manifest_files, discovered_code_files or code_files)
+        symbol_index = self._build_symbol_index(repo, discovered_code_files[:20])
 
         return {
             "top_level": top_files[:20],
@@ -115,7 +117,76 @@ class CodingExecutor:
             "source_dirs": source_dirs[:10],
             "discovered_code_files": discovered_code_files[:30],
             "language_hint": language_hint,
+            "symbol_index": symbol_index[:30],
         }
+
+    def _extract_symbol_names(self, text: str, suffix: str) -> List[str]:
+        patterns = []
+        if suffix == ".py":
+            patterns = [
+                r"^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                r"^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*[:\(]",
+            ]
+        elif suffix in {".ts", ".tsx", ".js", ".jsx"}:
+            patterns = [
+                r"^export\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                r"^function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                r"^export\s+class\s+([A-Za-z_][A-Za-z0-9_]*)\s*",
+                r"^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*",
+                r"^const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\(",
+            ]
+        results: List[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            for pattern in patterns:
+                m = re.match(pattern, stripped)
+                if m:
+                    name = m.group(1)
+                    if name not in results:
+                        results.append(name)
+        return results[:20]
+
+    def _build_symbol_index(self, repo: Path, rel_paths: List[str]) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for rel in rel_paths[:20]:
+            full = repo / rel
+            if not full.exists() or not full.is_file():
+                continue
+            try:
+                text = full.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            symbols = self._extract_symbol_names(text, full.suffix)
+            if symbols:
+                rows.append({
+                    "file": rel,
+                    "symbols": symbols[:12],
+                })
+        return rows
+
+    def _goal_tokens(self, goal: str) -> List[str]:
+        parts = re.findall(r"[A-Za-z_][A-Za-z0-9_]+", goal.lower())
+        stop = {"the", "and", "for", "with", "into", "from", "that", "this", "code", "task", "repo", "update", "prepare", "execution"}
+        return [x for x in parts if x not in stop][:20]
+
+    def _score_target_file(self, rel: str, repo_scan: Dict[str, Any], goal_tokens: List[str]) -> int:
+        score = 0
+        if rel in (repo_scan.get("entrypoint_hints") or []):
+            score += 4
+        if rel in (repo_scan.get("manifest_files") or []):
+            score += 2
+        rel_lower = rel.lower()
+        for token in goal_tokens:
+            if token in rel_lower:
+                score += 2
+        for row in (repo_scan.get("symbol_index") or []):
+            if row.get("file") != rel:
+                continue
+            for symbol in (row.get("symbols") or []):
+                symbol_lower = str(symbol).lower()
+                if any(token == symbol_lower or token in symbol_lower for token in goal_tokens):
+                    score += 3
+        return score
 
     def _candidate_files(self, repo: Path, packet: Dict[str, Any], repo_scan: Dict[str, Any]) -> List[str]:
         explicit = [x for x in (packet.get("files_of_interest") or []) if x]
@@ -129,26 +200,32 @@ class CodingExecutor:
             if rel not in candidates:
                 candidates.append(rel)
         for rel in (repo_scan.get("discovered_code_files") or []):
-            if len(candidates) >= 8:
+            if len(candidates) >= 12:
                 break
             if rel not in candidates:
                 candidates.append(rel)
         for rel in ["README.md", "pyproject.toml", "package.json", "requirements.txt"]:
-            if len(candidates) >= 8:
+            if len(candidates) >= 12:
                 break
             if (repo / rel).exists() and rel not in candidates:
                 candidates.append(rel)
-        return candidates[:8]
+
+        goal_tokens = self._goal_tokens(str(packet.get("goal") or ""))
+        ranked = sorted(candidates, key=lambda rel: (-self._score_target_file(rel, repo_scan, goal_tokens), rel))
+        return ranked[:8]
 
     def _build_edit_plan(self, packet: Dict[str, Any], target_files: List[str], repo_scan: Dict[str, Any]) -> List[Dict[str, Any]]:
         goal = str(packet.get("goal") or "").strip()
         language_hint = str(repo_scan.get("language_hint") or "unknown")
         entrypoints = list(repo_scan.get("entrypoint_hints") or [])
+        symbol_map = {row.get("file"): row.get("symbols") or [] for row in (repo_scan.get("symbol_index") or [])}
+        goal_tokens = self._goal_tokens(goal)
         plan: List[Dict[str, Any]] = []
         for rel in target_files[:5]:
             intent = f"inspect and update {rel} in support of: {goal}"
             if rel in entrypoints:
                 intent = f"inspect entrypoint {rel} and update it carefully in support of: {goal}"
+            symbol_hits = [s for s in symbol_map.get(rel, []) if any(t == s.lower() or t in s.lower() for t in goal_tokens)]
             plan.append({
                 "file": rel,
                 "intent": intent,
@@ -156,9 +233,24 @@ class CodingExecutor:
                 "context": {
                     "language_hint": language_hint,
                     "is_entrypoint": rel in entrypoints,
+                    "candidate_symbols": symbol_map.get(rel, [])[:8],
+                    "goal_symbol_hits": symbol_hits[:5],
                 },
             })
         return plan
+
+    def _active_edit_targets(self, target_files: List[str], edit_plan: List[Dict[str, Any]]) -> List[str]:
+        narrowed: List[str] = []
+        for item in edit_plan[:5]:
+            rel = str(item.get("file") or "").strip()
+            ctx = item.get("context") or {}
+            if not rel:
+                continue
+            if ctx.get("goal_symbol_hits") or ctx.get("is_entrypoint"):
+                narrowed.append(rel)
+        if narrowed:
+            return narrowed[:3]
+        return target_files[:3]
 
     def _read_preview(self, repo: Path, rel: str, max_chars: int = 600) -> str:
         full = repo / rel
@@ -314,6 +406,7 @@ class CodingExecutor:
         target_files = self._candidate_files(repo, packet, repo_scan)
         repo_scan["target_rationale"] = f"selected target files: {target_files[:5]}" if target_files else "no target files selected"
         edit_plan = self._build_edit_plan(packet, target_files, repo_scan)
+        active_edit_targets = self._active_edit_targets(target_files, edit_plan)
         draft_artifacts = self._materialize_draft_artifacts(repo, packet, edit_plan)
         deliverables: List[str] = []
         for rel in target_files:
@@ -330,8 +423,8 @@ class CodingExecutor:
         if not target_files:
             risks.append("no target files selected yet")
 
-        files_changed, apply_tests, apply_results = self._apply_append_change(repo, packet, target_files)
-        replace_changed, replace_tests, replace_results, replace_risks = self._apply_replace_change(repo, packet, target_files)
+        files_changed, apply_tests, apply_results = self._apply_append_change(repo, packet, active_edit_targets)
+        replace_changed, replace_tests, replace_results, replace_risks = self._apply_replace_change(repo, packet, active_edit_targets)
         files_changed.extend([x for x in replace_changed if x not in files_changed])
         risks.extend(replace_risks)
         tests_run.extend(apply_tests)

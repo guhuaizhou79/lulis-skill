@@ -40,13 +40,13 @@ def main() -> None:
     src_dir = repo_root / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
     (src_dir / "main.py").write_text("def main():\n    return 'ok'\n", encoding="utf-8")
-    (src_dir / "worker.py").write_text("def work():\n    return 1\n", encoding="utf-8")
+    (src_dir / "worker.py").write_text("class Worker:\n    pass\n\ndef reconcile_orders():\n    return 1\n", encoding="utf-8")
 
     try:
         executor = CodingExecutor(temp_dir)
         payload = {
             "title": "prepare coding execution",
-            "goal": "inspect repo and prepare coding execution packet",
+            "goal": "reconcile orders execution path",
             "repo_path": str(repo_root),
             "task_type": "code",
             "acceptance": [
@@ -63,7 +63,7 @@ def main() -> None:
             "append_text": "<!-- controlled append marker -->",
             "replace_old": "hello old world",
             "replace_new": "hello new world",
-            "files_of_interest": ["README.md", "GUIDE.md"],
+            "files_of_interest": [],
         }
         result = executor.execute(payload)
         _assert(result.get("status") == "success", "coding executor should succeed for a valid repo task")
@@ -75,22 +75,26 @@ def main() -> None:
         _assert("src" in (result.get("repo_scan", {}).get("source_dirs") or []), "repo scan should expose source dirs")
         _assert(result.get("repo_scan", {}).get("language_hint") == "python", "repo scan should infer python language hint")
         _assert(any(x.endswith("worker.py") for x in (result.get("repo_scan", {}).get("discovered_code_files") or [])), "repo scan should discover nested code files")
+        _assert(any((row.get("file") == "src/worker.py" and "reconcile_orders" in (row.get("symbols") or [])) for row in (result.get("repo_scan", {}).get("symbol_index") or [])), "repo scan should extract lightweight symbol index")
         _assert(isinstance(result.get("target_files"), list) and result.get("target_files"), "coding executor should expose target_files")
+        _assert("src/worker.py" in (result.get("target_files") or []), "goal-aware targeting should include symbol-matched file")
         _assert(isinstance(result.get("review_packet"), dict), "coding executor should expose formal review packet")
         _assert(result.get("review_packet", {}).get("verdict") == "accepted", "successful coding run should emit accepted review verdict")
         _assert(result.get("review_packet", {}).get("change_scope") == "multi_file", "multi-file coding run should be classified as multi_file")
         _assert(len(result.get("target_files") or []) >= 2, "coding executor should preserve multi-file target list")
         _assert(isinstance(result.get("edit_plan"), list) and result.get("edit_plan"), "coding executor should expose edit_plan")
+        _assert(any((item.get("file") == "src/worker.py" and "reconcile_orders" in ((item.get("context") or {}).get("goal_symbol_hits") or [])) for item in (result.get("edit_plan") or [])), "edit plan should surface goal symbol hits")
         _assert(isinstance(result.get("draft_artifacts"), list) and result.get("draft_artifacts"), "coding executor should expose draft artifacts")
         _assert(len(result.get("draft_artifacts") or []) >= 2, "coding executor should materialize per-file draft artifacts")
         _assert(Path(result.get("draft_artifacts")[0]).exists(), "coding executor draft artifact should exist")
         _assert(isinstance(result.get("files_changed"), list) and result.get("files_changed"), "coding executor should perform controlled file change")
-        updated = readme.read_text(encoding="utf-8")
+        worker_updated = (src_dir / "worker.py").read_text(encoding="utf-8")
+        main_updated = (src_dir / "main.py").read_text(encoding="utf-8")
+        readme_updated = readme.read_text(encoding="utf-8")
         guide_updated = guide.read_text(encoding="utf-8")
-        _assert("controlled append marker" in updated, "controlled append marker should be written to README target file")
-        _assert("controlled append marker" in guide_updated, "controlled append marker should be written to GUIDE target file")
-        _assert("hello new world" in updated, "controlled replace should be written to README target file")
-        _assert("hello new world" in guide_updated, "controlled replace should be written to GUIDE target file")
+        _assert("controlled append marker" in worker_updated or "controlled append marker" in main_updated, "controlled append marker should be written to narrowed active target files")
+        _assert("hello new world" not in readme_updated, "symbol-aware targeting should avoid broad replace on README when goal points elsewhere")
+        _assert("hello new world" not in guide_updated, "symbol-aware targeting should avoid broad replace on GUIDE when goal points elsewhere")
         _assert(any("python3 check.py" == x for x in result.get("tests_run") or []), "validation command should be recorded")
         _assert(any("passed: rc=0" in x for x in result.get("test_results") or []), "validation command should pass")
 
