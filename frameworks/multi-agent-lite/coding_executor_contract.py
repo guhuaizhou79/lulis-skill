@@ -183,8 +183,6 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
     test_results = [str(x) for x in (test_results or []) if str(x).strip()]
     risks = [str(x) for x in (risks or []) if str(x).strip()]
     status = "success"
-    if blockers or needs_input:
-        status = "blocked"
     review_packet = _build_review_packet(
         files_changed=files_changed,
         target_files=target_files,
@@ -195,6 +193,11 @@ def build_coding_result_packet(packet: Dict[str, Any], *, summary: str, files_ch
         blockers=blockers,
         needs_input=needs_input,
     )
+    review_verdict = str(review_packet.get("verdict") or "").strip().lower()
+    if blockers or needs_input or review_verdict == "blocked":
+        status = "blocked"
+    elif review_verdict == "needs_replan":
+        status = "failed"
     validation_policy = dict(review_packet.get("validation_policy") or {})
     retry_narrowing_hints = _derive_retry_narrowing_hints(
         target_files=target_files,

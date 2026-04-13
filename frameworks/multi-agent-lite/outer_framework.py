@@ -38,6 +38,73 @@ def _default_task_result_packet(summary: str, *, changes: List[str] | None = Non
     }
 
 
+def _overlay_packet_with_coding_result(payload: Dict[str, Any], route_result: Dict[str, Any]) -> Dict[str, Any]:
+    packet = dict(route_result.get("task_result_packet") or {})
+    coding_exec = route_result.get("coding_executor_result") or {}
+    if not coding_exec:
+        return packet
+
+    review_packet = coding_exec.get("review_packet") or {}
+    final_status = str(route_result.get("final_status") or "")
+    coding_status = str(coding_exec.get("status") or "")
+    blockers = _dedupe_strings(coding_exec.get("blockers") or review_packet.get("blocking_reasons") or [])
+    needs_input = _dedupe_strings(coding_exec.get("needs_input") or [])
+    risks = _dedupe_strings(coding_exec.get("risks") or [])
+    files_changed = _dedupe_strings(coding_exec.get("files_changed") or [])
+    deliverables = _dedupe_strings(coding_exec.get("deliverables") or files_changed)
+    packet["deliverables"] = deliverables
+    packet["changes"] = files_changed
+    packet["risks"] = risks
+    packet["needs_input"] = needs_input
+    packet["evidence_refs"] = _dedupe_strings(coding_exec.get("test_results") or [])
+
+    if final_status == "DONE" and coding_status == "success":
+        packet["status"] = "success"
+        packet["summary"] = str(coding_exec.get("summary") or packet.get("summary") or "coding task completed")
+        packet["review_verdict"] = review_packet.get("verdict") or "accepted"
+        packet["review_reasons"] = _dedupe_strings(review_packet.get("accepted_reasons") or [])
+        packet["delivery_status"] = "delivered"
+        packet["recommended_sendback_target"] = "none"
+        packet["next_action"] = "DONE"
+        route_result["coding_result_packet"] = build_code_result_packet(payload, packet)
+        return packet
+
+    if final_status == "BLOCKED" or coding_status == "blocked":
+        packet["status"] = "blocked"
+        packet["summary"] = str(coding_exec.get("summary") or packet.get("summary") or "coding task blocked")
+        packet["deliverables"] = []
+        packet["changes"] = files_changed
+        packet["risks"] = _dedupe_strings(risks + blockers)
+        packet["needs_input"] = _dedupe_strings(needs_input + blockers)
+        packet["evidence_refs"] = []
+        packet["review_verdict"] = review_packet.get("verdict") or "blocked"
+        packet["review_reasons"] = blockers
+        packet["delivery_status"] = "not_delivered"
+        packet["recommended_sendback_target"] = review_packet.get("recommended_sendback_target") or "manager"
+        packet["next_action"] = "BLOCKED"
+        route_result["coding_result_packet"] = build_code_result_packet(payload, packet)
+        return packet
+
+    if final_status == "PLAN":
+        packet["status"] = "failed"
+        packet["summary"] = str(coding_exec.get("summary") or packet.get("summary") or "coding task needs replan")
+        packet["deliverables"] = []
+        packet["changes"] = files_changed
+        packet["risks"] = risks
+        packet["needs_input"] = needs_input
+        packet["evidence_refs"] = []
+        packet["review_verdict"] = review_packet.get("verdict") or "needs_replan"
+        packet["review_reasons"] = _dedupe_strings(review_packet.get("blocking_reasons") or [])
+        packet["delivery_status"] = "not_delivered"
+        packet["recommended_sendback_target"] = review_packet.get("recommended_sendback_target") or "manager"
+        packet["next_action"] = "PLAN"
+        route_result["coding_result_packet"] = build_code_result_packet(payload, packet)
+        return packet
+
+    route_result["coding_result_packet"] = build_code_result_packet(payload, packet)
+    return packet
+
+
 def _build_direct_raw_task(payload: Dict[str, Any], summary: str) -> Dict[str, Any]:
     return {
         "task_id": None,
@@ -623,7 +690,8 @@ def _run_light_role_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def converge_outer_result(payload: Dict[str, Any], route_result: Dict[str, Any], task_shape: Dict[str, Any], run_trace: Dict[str, Any], writeback_plan: Dict[str, Any], writeback_stub: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    packet = route_result.get("task_result_packet") or {}
+    packet = _overlay_packet_with_coding_result(payload, route_result)
+    route_result["task_result_packet"] = packet
     route = str(route_result.get("route") or "direct")
     sendback_packet = route_result.get("manager_sendback_packet")
     next_payload = route_result.get("next_executor_payload")
@@ -701,7 +769,7 @@ def run_outer_framework(root: Path, payload: Dict[str, Any]) -> Dict[str, Any]:
         "task_type": payload.get("task_type"),
         "title": payload.get("title"),
         "goal": payload.get("goal"),
-    }) and str(payload.get("repo_path") or "").strip():
+    }):
         task_key = _task_sendback_key(payload, route_result)
         history = _load_sendback_history(root, task_key)
         route_result["sendback_history"] = history

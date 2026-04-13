@@ -67,11 +67,20 @@ def main() -> None:
         _assert(isinstance(light_result.get("raw_task"), dict), "light route should expose raw_task snapshot")
         _assert(light_result.get("raw_task", {}).get("orchestration_mode") == "light_role_check", "light raw task should record orchestration mode")
 
+        coding_repo = test_root / "coding-success-repo"
+        coding_repo.mkdir(parents=True, exist_ok=True)
+        (coding_repo / "README.md").write_text("multi-agent-lite\n", encoding="utf-8")
         coding_payload = {
             "title": "implement repo-aware coding lane",
             "goal": "add coding-specific result structure for staged code work",
             "task_type": "code",
             "priority": "high",
+            "repo_path": str(coding_repo),
+            "files_of_interest": ["README.md"],
+            "allowed_actions": ["read", "replace", "validate"],
+            "replace_old": "multi-agent-lite",
+            "replace_new": "multi-agent-lite-updated",
+            "validation_commands": ["python3 -V"],
             "acceptance": [
                 "produce delivery-ready artifact",
                 "include coding-specific result packet",
@@ -80,6 +89,7 @@ def main() -> None:
         }
         coding_result = run_outer_framework(test_root, coding_payload)
         _assert(coding_result.get("route") == "multi_agent_lite", "code task should route to staged path")
+        _assert(coding_result.get("normalized_status") == "completed", "valid coding success case should normalize to completed")
         _assert(isinstance(coding_result.get("coding_result_packet"), dict), "code task should expose coding_result_packet")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context"), dict), "coding result should include repo_context")
         _assert(isinstance(coding_result.get("coding_result_packet", {}).get("repo_context", {}).get("repo_context"), dict), "coding result should include nested repo-aware context")
