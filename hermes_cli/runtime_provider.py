@@ -357,6 +357,9 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
         api_mode = _parse_api_mode(entry.get("api_mode"))
         if api_mode:
             result["api_mode"] = api_mode
+        headers = entry.get("headers")
+        if isinstance(headers, dict) and headers:
+            result["headers"] = headers
         model_name = str(entry.get("model", "") or "").strip()
         if model_name:
             result["model"] = model_name

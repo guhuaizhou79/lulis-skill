@@ -553,6 +553,7 @@ class AIAgent:
         api_key: str = None,
         provider: str = None,
         api_mode: str = None,
+        default_headers: Dict[str, Any] = None,
         acp_command: str = None,
         acp_args: list[str] | None = None,
         command: str = None,
@@ -672,6 +673,7 @@ class AIAgent:
         self.log_prefix = f"{log_prefix} " if log_prefix else ""
         # Store effective base URL for feature detection (prompt caching, reasoning, etc.)
         self.base_url = base_url or ""
+        self.default_headers = dict(default_headers) if isinstance(default_headers, dict) else None
         provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
         self.provider = provider_name or ""
         self.acp_command = acp_command or command
@@ -901,6 +903,8 @@ class AIAgent:
                 if self.provider == "copilot-acp":
                     client_kwargs["command"] = self.acp_command
                     client_kwargs["args"] = self.acp_args
+                if self.default_headers:
+                    client_kwargs["default_headers"] = dict(self.default_headers)
                 effective_base = base_url
                 if "openrouter" in effective_base.lower():
                     client_kwargs["default_headers"] = {
@@ -931,6 +935,8 @@ class AIAgent:
                     # Preserve any default_headers the router set
                     if hasattr(_routed_client, '_default_headers') and _routed_client._default_headers:
                         client_kwargs["default_headers"] = dict(_routed_client._default_headers)
+                    elif self.default_headers:
+                        client_kwargs["default_headers"] = dict(self.default_headers)
                 else:
                     # When the user explicitly chose a non-OpenRouter provider
                     # but no credentials were found, fail fast with a clear
@@ -4143,6 +4149,7 @@ class AIAgent:
                 self._client_log_context(),
             )
             return client
+
         client = OpenAI(**client_kwargs)
         logger.info(
             "OpenAI client created (%s, shared=%s) %s",

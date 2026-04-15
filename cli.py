@@ -2690,6 +2690,7 @@ class HermesCLI:
         resolved_acp_command = runtime.get("command")
         resolved_acp_args = list(runtime.get("args") or [])
         resolved_credential_pool = runtime.get("credential_pool")
+        resolved_default_headers = runtime.get("headers") or runtime.get("default_headers")
         if not isinstance(api_key, str) or not api_key:
             # Custom / local endpoints (llama.cpp, ollama, vLLM, etc.) often
             # don't require authentication.  When a base_url IS configured but
@@ -2726,6 +2727,7 @@ class HermesCLI:
         self.acp_args = resolved_acp_args
         self._credential_pool = resolved_credential_pool
         self._provider_source = runtime.get("source")
+        self._default_headers = resolved_default_headers if isinstance(resolved_default_headers, dict) else None
         self.api_key = api_key
         self.base_url = base_url
 
@@ -2867,6 +2869,7 @@ class HermesCLI:
                 "command": self.acp_command,
                 "args": list(self.acp_args or []),
                 "credential_pool": getattr(self, "_credential_pool", None),
+                "default_headers": getattr(self, "_default_headers", None),
             }
             effective_model = model_override or self.model
             self.agent = AIAgent(
@@ -2878,6 +2881,7 @@ class HermesCLI:
                 acp_command=runtime.get("command"),
                 acp_args=runtime.get("args"),
                 credential_pool=runtime.get("credential_pool"),
+                default_headers=runtime.get("default_headers"),
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 verbose_logging=self.verbose,

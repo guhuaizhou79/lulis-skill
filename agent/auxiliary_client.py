@@ -1453,12 +1453,18 @@ def resolve_provider_client(
             if not custom_key and custom_key_env:
                 custom_key = os.getenv(custom_key_env, "").strip()
             custom_key = custom_key or "no-key-required"
+            custom_headers = custom_entry.get("headers") if isinstance(custom_entry, dict) else None
+            if not isinstance(custom_headers, dict):
+                custom_headers = None
             if custom_base:
                 final_model = _normalize_resolved_model(
                     model or custom_entry.get("model") or _read_main_model() or "gpt-4o-mini",
                     provider,
                 )
-                client = OpenAI(api_key=custom_key, base_url=custom_base)
+                extra = {}
+                if custom_headers:
+                    extra["default_headers"] = custom_headers
+                client = OpenAI(api_key=custom_key, base_url=custom_base, **extra)
                 client = _wrap_if_needed(client, final_model, custom_base)
                 logger.debug(
                     "resolve_provider_client: named custom provider %r (%s)",
