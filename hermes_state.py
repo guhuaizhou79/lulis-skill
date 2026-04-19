@@ -120,6 +120,49 @@ class SessionDB:
     single writer via WAL mode). Each method opens its own cursor.
     """
 
+    @staticmethod
+    def _parse_structured_content(content: Any) -> Any:
+        """Best-effort parse for message content that may embed JSON after a
+        status prefix like ``Partial delegation failure:\n{...}``.
+        """
+        if not isinstance(content, str):
+            return content
+
+        stripped = content.strip()
+        if not stripped:
+            return None
+
+        if stripped.startswith(("{", "[")):
+            try:
+                return json.loads(stripped)
+            except (json.JSONDecodeError, TypeError):
+                return None
+
+        for marker in ("\n{", "\n["):
+            idx = stripped.find(marker)
+            if idx == -1:
+                continue
+            candidate = stripped[idx + 1 :].strip()
+            try:
+                return json.loads(candidate)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return None
+
+    @classmethod
+    def _restore_message_row(cls, row: sqlite3.Row) -> Dict[str, Any]:
+        msg = dict(row)
+        if msg.get("tool_calls"):
+            try:
+                msg["tool_calls"] = json.loads(msg["tool_calls"])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Failed to deserialize tool_calls in get_messages, falling back to []")
+                msg["tool_calls"] = []
+        structured_content = cls._parse_structured_content(msg.get("content"))
+        if structured_content is not None:
+            msg["structured_content"] = structured_content
+        return msg
+
     # ── Write-contention tuning ──
     # With multiple hermes processes (gateway + CLI sessions + worktree agents)
     # all sharing one state.db, WAL write-lock contention causes visible TUI
@@ -873,14 +916,7 @@ class SessionDB:
             rows = cursor.fetchall()
         result = []
         for row in rows:
-            msg = dict(row)
-            if msg.get("tool_calls"):
-                try:
-                    msg["tool_calls"] = json.loads(msg["tool_calls"])
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to deserialize tool_calls in get_messages, falling back to []")
-                    msg["tool_calls"] = []
-            result.append(msg)
+            result.append(self._restore_message_row(row))
         return result
 
     def get_messages_as_conversation(self, session_id: str) -> List[Dict[str, Any]]:
@@ -899,6 +935,9 @@ class SessionDB:
         messages = []
         for row in rows:
             msg = {"role": row["role"], "content": row["content"]}
+            structured_content = self._parse_structured_content(row["content"])
+            if structured_content is not None:
+                msg["structured_content"] = structured_content
             if row["tool_call_id"]:
                 msg["tool_call_id"] = row["tool_call_id"]
             if row["tool_name"]:

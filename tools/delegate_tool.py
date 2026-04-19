@@ -177,8 +177,10 @@ def _build_child_progress_callback(task_index: int, parent_agent, task_count: in
     # Gateway: batch tool names, flush periodically
     _BATCH_SIZE = 5
     _batch: List[str] = []
+    _latest_structured_event: Optional[dict] = None
 
     def _callback(event_type: str, tool_name: str = None, preview: str = None, args=None, **kwargs):
+        nonlocal _latest_structured_event
         # event_type is one of: "tool.started", "tool.completed",
         # "reasoning.available", "_thinking", "subagent_progress"
 
@@ -212,11 +214,26 @@ def _build_child_progress_callback(task_index: int, parent_agent, task_count: in
                 logger.debug("Spinner print_above failed: %s", e)
 
         if parent_cb:
+            _latest_structured_event = {
+                "subevent": event_type,
+                "task_index": task_index,
+                "task_count": task_count,
+                "tool": tool_name or "",
+                "preview": preview or "",
+                "args": args if isinstance(args, dict) else {},
+            }
             _batch.append(tool_name or "")
             if len(_batch) >= _BATCH_SIZE:
                 summary = ", ".join(_batch)
                 try:
-                    parent_cb("subagent_progress", f"🔀 {prefix}{summary}")
+                    parent_cb(
+                        "subagent_progress",
+                        f"🔀 {prefix}{summary}",
+                        delegation_event={
+                            **(_latest_structured_event or {}),
+                            "summary": summary,
+                        },
+                    )
                 except Exception as e:
                     logger.debug("Parent callback failed: %s", e)
                 _batch.clear()
@@ -226,7 +243,14 @@ def _build_child_progress_callback(task_index: int, parent_agent, task_count: in
         if parent_cb and _batch:
             summary = ", ".join(_batch)
             try:
-                parent_cb("subagent_progress", f"🔀 {prefix}{summary}")
+                parent_cb(
+                    "subagent_progress",
+                    f"🔀 {prefix}{summary}",
+                    delegation_event={
+                        **(_latest_structured_event or {}),
+                        "summary": summary,
+                    },
+                )
             except Exception as e:
                 logger.debug("Parent callback flush failed: %s", e)
             _batch.clear()
@@ -412,12 +436,6 @@ def _run_single_child(
     # Get the progress callback from the child agent
     child_progress_cb = getattr(child, 'tool_progress_callback', None)
 
-    # Restore parent tool names using the value saved before child construction
-    # mutated the global. This is the correct parent toolset, not the child's.
-    import model_tools
-    _saved_tool_names = getattr(child, "_delegate_saved_tool_names",
-                                list(model_tools._last_resolved_tool_names))
-
     child_pool = getattr(child, '_credential_pool', None)
     leased_cred_id = None
     if child_pool is not None:
@@ -589,14 +607,6 @@ def _run_single_child(
             except Exception as exc:
                 logger.debug("Failed to release credential lease: %s", exc)
 
-        # Restore the parent's tool names so the process-global is correct
-        # for any subsequent execute_code calls or other consumers.
-        import model_tools
-
-        saved_tool_names = getattr(child, "_delegate_saved_tool_names", None)
-        if isinstance(saved_tool_names, list):
-            model_tools._last_resolved_tool_names = list(saved_tool_names)
-
         # Remove child from active tracking
 
         # Unregister child from interrupt propagation
@@ -699,34 +709,22 @@ def delegate_task(
     # Track goal labels for progress display (truncated for readability)
     task_labels = [t["goal"][:40] for t in task_list]
 
-    # Save parent tool names BEFORE any child construction mutates the global.
-    # _build_child_agent() calls AIAgent() which calls get_tool_definitions(),
-    # which overwrites model_tools._last_resolved_tool_names with child's toolset.
-    import model_tools as _model_tools
-    _parent_tool_names = list(_model_tools._last_resolved_tool_names)
-
-    # Build all child agents on the main thread (thread-safe construction)
-    # Wrapped in try/finally so the global is always restored even if a
-    # child build raises (otherwise _last_resolved_tool_names stays corrupted).
+    # Build all child agents on the main thread (thread-safe construction).
+    # Child agents now carry their own resolved tool state, so delegation no
+    # longer snapshots/restores model_tools' process-global compat cache.
     children = []
-    try:
-        for i, t in enumerate(task_list):
-            child = _build_child_agent(
-                task_index=i, goal=t["goal"], context=t.get("context"),
-                toolsets=t.get("toolsets") or toolsets, model=creds["model"],
-                max_iterations=effective_max_iter, parent_agent=parent_agent,
-                override_provider=creds["provider"], override_base_url=creds["base_url"],
-                override_api_key=creds["api_key"],
-                override_api_mode=creds["api_mode"],
-                override_acp_command=t.get("acp_command") or acp_command,
-                override_acp_args=t.get("acp_args") or acp_args,
-            )
-            # Override with correct parent tool names (before child construction mutated global)
-            child._delegate_saved_tool_names = _parent_tool_names
-            children.append((i, t, child))
-    finally:
-        # Authoritative restore: reset global to parent's tool names after all children built
-        _model_tools._last_resolved_tool_names = _parent_tool_names
+    for i, t in enumerate(task_list):
+        child = _build_child_agent(
+            task_index=i, goal=t["goal"], context=t.get("context"),
+            toolsets=t.get("toolsets") or toolsets, model=creds["model"],
+            max_iterations=effective_max_iter, parent_agent=parent_agent,
+            override_provider=creds["provider"], override_base_url=creds["base_url"],
+            override_api_key=creds["api_key"],
+            override_api_mode=creds["api_mode"],
+            override_acp_command=t.get("acp_command") or acp_command,
+            override_acp_args=t.get("acp_args") or acp_args,
+        )
+        children.append((i, t, child))
 
     if n_tasks == 1:
         # Single task -- run directly (no thread pool overhead)
@@ -792,6 +790,21 @@ def delegate_task(
         # Sort by task_index so results match input order
         results.sort(key=lambda r: r["task_index"])
 
+    child_by_task_index = {idx: child for idx, _task, child in children}
+    raw_parent_session_id = getattr(parent_agent, "session_id", "") if parent_agent else ""
+    parent_session_id = raw_parent_session_id if isinstance(raw_parent_session_id, (str, int, float, bool)) or raw_parent_session_id is None else ""
+
+    for entry in results:
+        child = child_by_task_index.get(entry.get("task_index"))
+        raw_child_session_id = getattr(child, "session_id", "") if child else ""
+        child_session_id = raw_child_session_id if isinstance(raw_child_session_id, (str, int, float, bool)) or raw_child_session_id is None else ""
+        raw_delegate_depth = getattr(child, "_delegate_depth", None) if child else None
+        delegate_depth = raw_delegate_depth if isinstance(raw_delegate_depth, (int, float)) or raw_delegate_depth is None else None
+        entry.setdefault("child_session_id", child_session_id)
+        entry.setdefault("parent_session_id", parent_session_id)
+        entry.setdefault("delegate_depth", delegate_depth)
+        entry.setdefault("source", "delegate_task")
+
     # Notify parent's memory provider of delegation outcomes
     if parent_agent and hasattr(parent_agent, '_memory_manager') and parent_agent._memory_manager:
         for entry in results:
@@ -800,7 +813,19 @@ def delegate_task(
                 parent_agent._memory_manager.on_delegation(
                     task=_task_goal,
                     result=entry.get("summary", "") or "",
-                    child_session_id=getattr(children[entry["task_index"]][2], "session_id", "") if entry["task_index"] < len(children) else "",
+                    child_session_id=entry.get("child_session_id", ""),
+                    task_index=entry.get("task_index"),
+                    status=entry.get("status"),
+                    error=entry.get("error"),
+                    api_calls=entry.get("api_calls"),
+                    duration_seconds=entry.get("duration_seconds"),
+                    model=entry.get("model"),
+                    exit_reason=entry.get("exit_reason"),
+                    tokens=entry.get("tokens"),
+                    tool_trace=entry.get("tool_trace"),
+                    parent_session_id=entry.get("parent_session_id", ""),
+                    delegate_depth=entry.get("delegate_depth"),
+                    source=entry.get("source"),
                 )
             except Exception:
                 pass

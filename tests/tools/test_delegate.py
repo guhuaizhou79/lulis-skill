@@ -301,55 +301,14 @@ class TestDelegateTask(unittest.TestCase):
         parent.tool_progress_callback.assert_not_called()
 
 
-class TestToolNamePreservation(unittest.TestCase):
-    """Verify _last_resolved_tool_names is restored after subagent runs."""
-
-    def test_global_tool_names_restored_after_delegation(self):
-        """The process-global _last_resolved_tool_names must be restored
-        after a subagent completes so the parent's execute_code sandbox
-        generates correct imports."""
-        import model_tools
-
-        parent = _make_mock_parent(depth=0)
-        original_tools = ["terminal", "read_file", "web_search", "execute_code", "delegate_task"]
-        model_tools._last_resolved_tool_names = list(original_tools)
-
-        with patch("run_agent.AIAgent") as MockAgent:
-            mock_child = MagicMock()
-            mock_child.run_conversation.return_value = {
-                "final_response": "done", "completed": True, "api_calls": 1,
-            }
-            MockAgent.return_value = mock_child
-
-            delegate_task(goal="Test tool preservation", parent_agent=parent)
-
-        self.assertEqual(model_tools._last_resolved_tool_names, original_tools)
-
-    def test_global_tool_names_restored_after_child_failure(self):
-        """Even when the child agent raises, the global must be restored."""
-        import model_tools
-
-        parent = _make_mock_parent(depth=0)
-        original_tools = ["terminal", "read_file", "web_search"]
-        model_tools._last_resolved_tool_names = list(original_tools)
-
-        with patch("run_agent.AIAgent") as MockAgent:
-            mock_child = MagicMock()
-            mock_child.run_conversation.side_effect = RuntimeError("boom")
-            MockAgent.return_value = mock_child
-
-            result = json.loads(delegate_task(goal="Crash test", parent_agent=parent))
-            self.assertEqual(result["results"][0]["status"], "error")
-
-        self.assertEqual(model_tools._last_resolved_tool_names, original_tools)
+class TestToolStateIsolation(unittest.TestCase):
+    """Verify delegation correctness does not depend on process-global tool state."""
 
     def test_build_child_agent_does_not_raise_name_error(self):
-        """Regression: _build_child_agent must not reference _saved_tool_names.
+        """Regression: _build_child_agent must not reference transient saved-tool locals.
 
-        The bug introduced by the e7844e9c merge conflict: line 235 inside
-        _build_child_agent read `list(_saved_tool_names)` where that variable
-        is only defined later in _run_single_child.  Calling _build_child_agent
-        standalone (without _run_single_child's scope) must never raise NameError.
+        Calling _build_child_agent standalone must never depend on state that only
+        exists inside _run_single_child.
         """
         parent = _make_mock_parent(depth=0)
 
@@ -366,34 +325,45 @@ class TestToolNamePreservation(unittest.TestCase):
                 )
             except NameError as exc:
                 self.fail(
-                    f"_build_child_agent raised NameError — "
-                    f"_saved_tool_names leaked back into wrong scope: {exc}"
+                    f"_build_child_agent raised NameError — leaked transient state: {exc}"
                 )
 
-    def test_saved_tool_names_set_on_child_before_run(self):
-        """_run_single_child must set _delegate_saved_tool_names on the child
-        from model_tools._last_resolved_tool_names before run_conversation."""
+    def test_delegate_does_not_store_saved_global_tool_names_on_child(self):
+        """Delegation should not attach process-global tool snapshots to the child."""
         import model_tools
 
         parent = _make_mock_parent(depth=0)
-        expected_tools = ["read_file", "web_search", "execute_code"]
-        model_tools._last_resolved_tool_names = list(expected_tools)
-
-        captured = {}
+        parent.valid_tool_names = {"terminal", "read_file", "execute_code"}
+        model_tools._last_resolved_tool_names = ["browser_navigate", "browser_click"]
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
-
-            def capture_and_return(user_message):
-                captured["saved"] = list(mock_child._delegate_saved_tool_names)
-                return {"final_response": "ok", "completed": True, "api_calls": 1}
-
-            mock_child.run_conversation.side_effect = capture_and_return
+            mock_child.run_conversation.return_value = {
+                "final_response": "ok", "completed": True, "api_calls": 1,
+            }
             MockAgent.return_value = mock_child
 
             delegate_task(goal="capture test", parent_agent=parent)
 
-        self.assertEqual(captured["saved"], expected_tools)
+        self.assertNotIn("_delegate_saved_tool_names", mock_child.__dict__)
+
+    def test_child_failure_does_not_require_global_tool_state_restore(self):
+        """Even when the child raises, delegation should succeed without global restore bookkeeping."""
+        import model_tools
+
+        parent = _make_mock_parent(depth=0)
+        parent.valid_tool_names = {"terminal", "read_file", "execute_code"}
+        model_tools._last_resolved_tool_names = ["browser_navigate"]
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            mock_child.run_conversation.side_effect = RuntimeError("boom")
+            MockAgent.return_value = mock_child
+
+            result = json.loads(delegate_task(goal="Crash test", parent_agent=parent))
+
+        self.assertEqual(result["results"][0]["status"], "error")
+        self.assertNotIn("_delegate_saved_tool_names", mock_child.__dict__)
 
 
 class TestDelegateObservability(unittest.TestCase):
@@ -402,12 +372,15 @@ class TestDelegateObservability(unittest.TestCase):
     def test_observability_fields_present(self):
         """Completed child should return tool_trace, tokens, model, exit_reason."""
         parent = _make_mock_parent(depth=0)
+        parent.session_id = "parent_sess_456"
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
             mock_child.model = "claude-sonnet-4-6"
+            mock_child.session_id = "child_sess_123"
             mock_child.session_prompt_tokens = 5000
             mock_child.session_completion_tokens = 1200
+            mock_child._delegate_depth = 1
             mock_child.run_conversation.return_value = {
                 "final_response": "done",
                 "completed": True,
@@ -432,6 +405,12 @@ class TestDelegateObservability(unittest.TestCase):
             self.assertEqual(entry["exit_reason"], "completed")
             self.assertEqual(entry["tokens"]["input"], 5000)
             self.assertEqual(entry["tokens"]["output"], 1200)
+
+            # Delegation lineage fields
+            self.assertEqual(entry["child_session_id"], "child_sess_123")
+            self.assertEqual(entry["parent_session_id"], parent.session_id)
+            self.assertEqual(entry["delegate_depth"], 1)
+            self.assertEqual(entry["source"], "delegate_task")
 
             # Tool trace
             self.assertEqual(len(entry["tool_trace"]), 1)
@@ -557,6 +536,44 @@ class TestDelegateObservability(unittest.TestCase):
 
             result = json.loads(delegate_task(goal="Test max iter", parent_agent=parent))
             self.assertEqual(result["results"][0]["exit_reason"], "max_iterations")
+
+
+class TestDelegationMemoryMetadata(unittest.TestCase):
+    def test_memory_hook_receives_rich_delegation_metadata(self):
+        parent = _make_mock_parent(depth=0)
+        parent.session_id = "parent_sess_mem"
+        parent._memory_manager = MagicMock()
+
+        with patch("tools.delegate_tool._run_single_child") as mock_run:
+            mock_run.return_value = {
+                "task_index": 0,
+                "status": "completed",
+                "summary": "Done!",
+                "api_calls": 3,
+                "duration_seconds": 5.0,
+                "model": "anthropic/claude-sonnet-4",
+                "exit_reason": "completed",
+                "tokens": {"input": 111, "output": 222},
+                "tool_trace": [{"tool": "web_search", "status": "ok"}],
+            }
+
+            result = json.loads(delegate_task(goal="Fix tests", parent_agent=parent))
+
+        assert result["results"][0]["status"] == "completed"
+        parent._memory_manager.on_delegation.assert_called_once()
+        kwargs = parent._memory_manager.on_delegation.call_args.kwargs
+        assert kwargs["task"] == "Fix tests"
+        assert kwargs["result"] == "Done!"
+        assert kwargs["status"] == "completed"
+        assert kwargs["duration_seconds"] == 5.0
+        assert kwargs["model"] == "anthropic/claude-sonnet-4"
+        assert kwargs["exit_reason"] == "completed"
+        assert kwargs["tokens"] == {"input": 111, "output": 222}
+        assert kwargs["tool_trace"] == [{"tool": "web_search", "status": "ok"}]
+        assert kwargs["child_session_id"]
+        assert kwargs["parent_session_id"] == "parent_sess_mem"
+        assert kwargs["delegate_depth"] == 1
+        assert kwargs["source"] == "delegate_task"
 
 
 class TestBlockedTools(unittest.TestCase):

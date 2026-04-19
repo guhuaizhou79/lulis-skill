@@ -1064,6 +1064,57 @@ class TestFormatToolsForSystemMessage:
 # ===================================================================
 
 
+class TestConvertToTrajectoryFormat:
+    def test_partial_delegate_failure_preserves_structured_lineage(self, agent):
+        agent.tools = _make_tool_defs("delegate_task")
+        payload = {
+            "results": [
+                {
+                    "task_index": 0,
+                    "status": "error",
+                    "summary": "failed",
+                    "child_session_id": "child_sess_123",
+                    "parent_session_id": "parent_sess_456",
+                    "delegate_depth": 1,
+                    "source": "delegate_task",
+                }
+            ],
+            "total_duration_seconds": 1.23,
+        }
+        messages = [
+            {"role": "user", "content": "delegate please"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "delegate_task", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "tool_name": "delegate_task",
+                "content": "Partial delegation failure:\n" + json.dumps(payload, ensure_ascii=False),
+            },
+        ]
+
+        trajectory = agent._convert_to_trajectory_format(messages, "delegate please", completed=False)
+        tool_value = trajectory[-1]["value"]
+        assert tool_value.startswith("<tool_response>\n")
+        assert tool_value.endswith("\n</tool_response>")
+
+        parsed = json.loads(tool_value[len("<tool_response>\n") : -len("\n</tool_response>")])
+        entry = parsed["content"]["results"][0]
+        assert entry["child_session_id"] == "child_sess_123"
+        assert entry["parent_session_id"] == "parent_sess_456"
+        assert entry["delegate_depth"] == 1
+        assert entry["source"] == "delegate_task"
+
+
 class TestExecuteToolCalls:
     def test_single_tool_executed(self, agent):
         tc = _mock_tool_call(name="web_search", arguments='{"q":"test"}', call_id="c1")
@@ -1073,13 +1124,26 @@ class TestExecuteToolCalls:
             "run_agent.handle_function_call", return_value="search result"
         ) as mock_hfc:
             agent._execute_tool_calls(mock_msg, messages, "task-1")
-            # enabled_tools passes the agent's own valid_tool_names
+            # enabled_tools passes the agent's own resolved tool list
             args, kwargs = mock_hfc.call_args
             assert args[:3] == ("web_search", {"q": "test"}, "task-1")
             assert set(kwargs.get("enabled_tools", [])) == agent.valid_tool_names
+            assert kwargs.get("enabled_tools", []) == agent.resolved_tool_names
         assert len(messages) == 1
         assert messages[0]["role"] == "tool"
         assert "search result" in messages[0]["content"]
+
+    def test_single_tool_uses_agent_local_resolved_tool_names_not_global(self, agent):
+        tc = _mock_tool_call(name="web_search", arguments='{"q":"test"}', call_id="c1")
+        mock_msg = _mock_assistant_msg(content="", tool_calls=[tc])
+        messages = []
+        agent.resolved_tool_names = ["web_search"]
+        agent.valid_tool_names = {"web_search"}
+
+        with patch("run_agent.handle_function_call", return_value="search result") as mock_hfc, \
+             patch("model_tools._last_resolved_tool_names", ["terminal", "write_file"]):
+            agent._execute_tool_calls(mock_msg, messages, "task-1")
+            assert mock_hfc.call_args.kwargs.get("enabled_tools", []) == ["web_search"]
 
     def test_interrupt_skips_remaining(self, agent):
         tc1 = _mock_tool_call(name="web_search", arguments="{}", call_id="c1")

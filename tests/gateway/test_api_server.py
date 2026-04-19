@@ -12,6 +12,7 @@ Tests cover:
 - Error handling (invalid JSON, missing fields)
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -227,6 +228,8 @@ def _create_app(adapter: APIServerAdapter) -> web.Application:
     app.router.add_post("/v1/responses", adapter._handle_responses)
     app.router.add_get("/v1/responses/{response_id}", adapter._handle_get_response)
     app.router.add_delete("/v1/responses/{response_id}", adapter._handle_delete_response)
+    app.router.add_post("/v1/runs", adapter._handle_runs)
+    app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
     return app
 
 
@@ -238,6 +241,183 @@ def adapter():
 @pytest.fixture
 def auth_adapter():
     return _make_adapter(api_key="sk-secret")
+
+
+# ---------------------------------------------------------------------------
+# Run event callback
+# ---------------------------------------------------------------------------
+
+
+class TestRunEventCallback:
+    @pytest.mark.asyncio
+    async def test_forwards_structured_subagent_progress_events(self, adapter):
+        run_id = "run_test123"
+        q = asyncio.Queue()
+        adapter._run_streams[run_id] = q
+        loop = asyncio.get_running_loop()
+
+        cb = adapter._make_run_event_callback(run_id, loop)
+        cb(
+            "subagent_progress",
+            "🔀 [2] web_search",
+            delegation_event={
+                "subevent": "tool.started",
+                "task_index": 1,
+                "task_count": 3,
+                "tool": "web_search",
+                "preview": "Python docs",
+                "summary": "web_search",
+            },
+        )
+        await asyncio.sleep(0)
+
+        event = await q.get()
+        assert event["event"] == "subagent_progress"
+        assert event["run_id"] == run_id
+        assert event["text"] == "🔀 [2] web_search"
+        assert event["delegation_event"]["task_index"] == 1
+        assert event["delegation_event"]["task_count"] == 3
+        assert event["delegation_event"]["tool"] == "web_search"
+        assert event["delegation_event"]["summary"] == "web_search"
+
+
+class TestRunsStreaming:
+    @pytest.mark.asyncio
+    async def test_run_events_stream_includes_subagent_progress(self, adapter):
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            def _mock_create_agent(**kwargs):
+                mock_agent = MagicMock()
+                progress_cb = kwargs.get("tool_progress_callback")
+                text_cb = kwargs.get("stream_delta_callback")
+
+                def _run_conversation(**_ignored):
+                    if progress_cb:
+                        progress_cb(
+                            "subagent_progress",
+                            "🔀 [1] web_search",
+                            delegation_event={
+                                "subevent": "tool.started",
+                                "task_index": 0,
+                                "task_count": 1,
+                                "tool": "web_search",
+                                "preview": "Python docs",
+                                "summary": "web_search",
+                            },
+                        )
+                    if text_cb:
+                        text_cb("done")
+                    return {"final_response": "done", "messages": [], "api_calls": 1}
+
+                mock_agent.run_conversation.side_effect = _run_conversation
+                mock_agent.session_prompt_tokens = 1
+                mock_agent.session_completion_tokens = 2
+                mock_agent.session_total_tokens = 3
+                return mock_agent
+
+            with patch.object(adapter, "_create_agent", side_effect=_mock_create_agent):
+                start_resp = await cli.post(
+                    "/v1/runs",
+                    json={"model": "hermes-agent", "input": "search python docs"},
+                )
+                assert start_resp.status == 202
+                start_data = await start_resp.json()
+                run_id = start_data["run_id"]
+
+                events_resp = await cli.get(f"/v1/runs/{run_id}/events")
+                assert events_resp.status == 200
+                body = await events_resp.text()
+
+                assert '"event": "subagent_progress"' in body
+                assert '"text": "\\ud83d\\udd00 [1] web_search"' in body or '"text": "🔀 [1] web_search"' in body
+                assert '"delegation_event": {' in body
+                assert '"subevent": "tool.started"' in body
+                assert '"tool": "web_search"' in body
+                assert '"event": "message.delta"' in body
+                assert '"event": "run.completed"' in body
+
+    @pytest.mark.asyncio
+    async def test_run_events_stream_preserves_success_event_order(self, adapter):
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            def _mock_create_agent(**kwargs):
+                mock_agent = MagicMock()
+                progress_cb = kwargs.get("tool_progress_callback")
+                text_cb = kwargs.get("stream_delta_callback")
+
+                def _run_conversation(**_ignored):
+                    progress_cb(
+                        "subagent_progress",
+                        "🔀 [1] web_search",
+                        delegation_event={
+                            "subevent": "tool.started",
+                            "task_index": 0,
+                            "task_count": 1,
+                            "tool": "web_search",
+                            "preview": "Python docs",
+                            "summary": "web_search",
+                        },
+                    )
+                    text_cb("done")
+                    return {"final_response": "done", "messages": [], "api_calls": 1}
+
+                mock_agent.run_conversation.side_effect = _run_conversation
+                mock_agent.session_prompt_tokens = 1
+                mock_agent.session_completion_tokens = 2
+                mock_agent.session_total_tokens = 3
+                return mock_agent
+
+            with patch.object(adapter, "_create_agent", side_effect=_mock_create_agent):
+                start_resp = await cli.post(
+                    "/v1/runs",
+                    json={"model": "hermes-agent", "input": "search python docs"},
+                )
+                assert start_resp.status == 202
+                run_id = (await start_resp.json())["run_id"]
+
+                events_resp = await cli.get(f"/v1/runs/{run_id}/events")
+                assert events_resp.status == 200
+                body = await events_resp.text()
+
+                subagent_idx = body.index('"event": "subagent_progress"')
+                delta_idx = body.index('"event": "message.delta"')
+                completed_idx = body.index('"event": "run.completed"')
+                closed_idx = body.index(": stream closed")
+
+                assert subagent_idx < delta_idx < completed_idx < closed_idx
+
+    @pytest.mark.asyncio
+    async def test_run_events_stream_emits_run_failed_without_run_completed(self, adapter):
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            def _mock_create_agent(**kwargs):
+                mock_agent = MagicMock()
+
+                def _run_conversation(**_ignored):
+                    raise RuntimeError("boom")
+
+                mock_agent.run_conversation.side_effect = _run_conversation
+                mock_agent.session_prompt_tokens = 0
+                mock_agent.session_completion_tokens = 0
+                mock_agent.session_total_tokens = 0
+                return mock_agent
+
+            with patch.object(adapter, "_create_agent", side_effect=_mock_create_agent):
+                start_resp = await cli.post(
+                    "/v1/runs",
+                    json={"model": "hermes-agent", "input": "explode"},
+                )
+                assert start_resp.status == 202
+                run_id = (await start_resp.json())["run_id"]
+
+                events_resp = await cli.get(f"/v1/runs/{run_id}/events")
+                assert events_resp.status == 200
+                body = await events_resp.text()
+
+                assert '"event": "run.failed"' in body
+                assert '"error": "boom"' in body
+                assert '"event": "run.completed"' not in body
+                assert ': stream closed' in body
 
 
 # ---------------------------------------------------------------------------

@@ -154,11 +154,6 @@ TOOL_TO_TOOLSET_MAP: Dict[str, str] = registry.get_tool_to_toolset_map()
 
 TOOLSET_REQUIREMENTS: Dict[str, dict] = registry.get_toolset_requirements()
 
-# Resolved tool names from the last get_tool_definitions() call.
-# Used by code_execution_tool to know which tools are available in this session.
-_last_resolved_tool_names: List[str] = []
-
-
 # =============================================================================
 # Legacy toolset name mapping  (old _tools-suffixed names -> tool name lists)
 # =============================================================================
@@ -309,9 +304,6 @@ def get_tool_definitions(
         else:
             print("🛠️  No tools selected (all filtered out or unavailable)")
 
-    global _last_resolved_tool_names
-    _last_resolved_tool_names = [t["function"]["name"] for t in filtered_tools]
-
     return filtered_tools
 
 
@@ -436,10 +428,8 @@ def handle_function_call(
         function_args: Arguments for the function.
         task_id: Unique identifier for terminal/browser session isolation.
         user_task: The user's original task (for browser_snapshot context).
-        enabled_tools: Tool names enabled for this session.  When provided,
-                       execute_code uses this list to determine which sandbox
-                       tools to generate.  Falls back to the process-global
-                       ``_last_resolved_tool_names`` for backward compat.
+        enabled_tools: Tool names enabled for this session. When provided,
+                       execute_code uses this explicit allow-list.
 
     Returns:
         Function result as a JSON string.
@@ -496,13 +486,10 @@ def handle_function_call(
                 pass  # file_tools may not be loaded yet
 
         if function_name == "execute_code":
-            # Prefer the caller-provided list so subagents can't overwrite
-            # the parent's tool set via the process-global.
-            sandbox_enabled = enabled_tools if enabled_tools is not None else _last_resolved_tool_names
             result = registry.dispatch(
                 function_name, function_args,
                 task_id=task_id,
-                enabled_tools=sandbox_enabled,
+                enabled_tools=enabled_tools,
             )
         else:
             result = registry.dispatch(

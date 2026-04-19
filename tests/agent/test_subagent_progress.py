@@ -141,6 +141,29 @@ class TestBuildChildProgressCallback:
         assert "tool_0" in call_args[0][1]
         assert "tool_4" in call_args[0][1]
 
+    def test_gateway_progress_includes_structured_delegation_event(self):
+        """Gateway relay should include structured delegation metadata, not just text."""
+        parent = MagicMock()
+        parent._delegate_spinner = None
+        parent_cb = MagicMock()
+        parent.tool_progress_callback = parent_cb
+
+        cb = _build_child_progress_callback(1, parent, task_count=3)
+        cb("tool.started", "web_search", "quantum computing", {"query": "quantum computing"})
+        cb._flush()
+
+        parent_cb.assert_called_once()
+        call_args = parent_cb.call_args
+        assert call_args[0][0] == "subagent_progress"
+        assert "web_search" in call_args[0][1]
+        event = call_args[1].get("delegation_event")
+        assert event is not None
+        assert event["subevent"] == "tool.started"
+        assert event["task_index"] == 1
+        assert event["task_count"] == 3
+        assert event["tool"] == "web_search"
+        assert event["preview"] == "quantum computing"
+
     def test_thinking_not_relayed_to_gateway(self):
         """Thinking events should NOT be sent to gateway (too noisy)."""
         parent = MagicMock()

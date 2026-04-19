@@ -390,7 +390,10 @@ def _rpc_server_loop(
                         sys.stdout = devnull
                         sys.stderr = devnull
                         result = handle_function_call(
-                            tool_name, tool_args, task_id=task_id
+                            tool_name,
+                            tool_args,
+                            task_id=task_id,
+                            enabled_tools=list(allowed_tools),
                         )
                     finally:
                         sys.stdout, sys.stderr = _real_stdout, _real_stderr
@@ -661,7 +664,10 @@ def _rpc_poll_loop(
                             sys.stdout = devnull
                             sys.stderr = devnull
                             tool_result = handle_function_call(
-                                tool_name, tool_args, task_id=task_id
+                                tool_name,
+                                tool_args,
+                                task_id=task_id,
+                                enabled_tools=list(allowed_tools),
                             )
                         finally:
                             sys.stdout, sys.stderr = _real_stdout, _real_stderr

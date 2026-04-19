@@ -2075,7 +2075,15 @@ class APIServerAdapter(BasePlatformAdapter):
                     "timestamp": ts,
                     "text": preview or "",
                 })
-            # _thinking and subagent_progress are intentionally not forwarded
+            elif event_type == "subagent_progress":
+                _push({
+                    "event": "subagent_progress",
+                    "run_id": run_id,
+                    "timestamp": ts,
+                    "text": tool_name or preview or "",
+                    "delegation_event": kwargs.get("delegation_event") or {},
+                })
+            # _thinking is intentionally not forwarded
 
         return _callback
 

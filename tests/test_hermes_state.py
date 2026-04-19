@@ -1,5 +1,6 @@
 """Tests for hermes_state.py — SessionDB SQLite CRUD, FTS5 search, export."""
 
+import json
 import time
 import pytest
 from pathlib import Path
@@ -261,6 +262,38 @@ class TestMessageStorage:
         assert len(conv) == 1
         assert conv[0]["codex_reasoning_items"] == codex_items
         assert conv[0]["codex_reasoning_items"][0]["encrypted_content"] == "enc_blob_123"
+
+    def test_tool_structured_content_persisted_and_restored(self, db):
+        db.create_session(session_id="s1", source="cli")
+        payload = {
+            "results": [
+                {
+                    "task_index": 0,
+                    "status": "error",
+                    "summary": "failed",
+                    "child_session_id": "child_sess_123",
+                    "parent_session_id": "parent_sess_456",
+                    "delegate_depth": 1,
+                    "source": "delegate_task",
+                }
+            ],
+            "total_duration_seconds": 1.23,
+        }
+        db.append_message(
+            "s1",
+            role="tool",
+            tool_name="delegate_task",
+            tool_call_id="call_1",
+            content="Partial delegation failure:\n" + json.dumps(payload, ensure_ascii=False),
+        )
+
+        messages = db.get_messages("s1")
+        assert len(messages) == 1
+        structured = messages[0]["structured_content"]
+        assert structured["results"][0]["child_session_id"] == "child_sess_123"
+        assert structured["results"][0]["parent_session_id"] == "parent_sess_456"
+        assert structured["results"][0]["delegate_depth"] == 1
+        assert structured["results"][0]["source"] == "delegate_task"
 
 
 # =========================================================================

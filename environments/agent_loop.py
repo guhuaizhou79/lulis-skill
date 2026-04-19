@@ -411,6 +411,7 @@ class HermesAgentLoop:
                                         lambda: handle_function_call(
                                             _tn, _ta, task_id=_tid,
                                             user_task=_user_task,
+                                            enabled_tools=list(self.valid_tool_names),
                                         ),
                                     )
                                     tool_elapsed = _time.monotonic() - tool_submit_time

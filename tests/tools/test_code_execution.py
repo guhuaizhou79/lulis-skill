@@ -45,10 +45,18 @@ from tools.code_execution_tool import (
     EXECUTE_CODE_SCHEMA,
     _TOOL_DOC_LINES,
     _execute_remote,
+    _rpc_poll_loop,
 )
 
 
-def _mock_handle_function_call(function_name, function_args, task_id=None, user_task=None):
+def _mock_handle_function_call(
+    function_name,
+    function_args,
+    task_id=None,
+    user_task=None,
+    enabled_tools=None,
+    **kwargs,
+):
     """Mock dispatcher that returns canned responses for each tool."""
     if function_name == "terminal":
         cmd = function_args.get("command", "")
@@ -157,6 +165,62 @@ class TestExecuteCodeRemoteTempDir(unittest.TestCase):
         self.assertIn("HERMES_RPC_DIR=/data/data/com.termux/files/usr/tmp/hermes_exec_", run_cmd)
         self.assertIn("rm -rf /data/data/com.termux/files/usr/tmp/hermes_exec_", cleanup_cmd)
         self.assertNotIn("mkdir -p /tmp/hermes_exec_", mkdir_cmd)
+
+
+class TestRpcPollLoop(unittest.TestCase):
+    def test_forwards_allowed_tools_to_handle_function_call(self):
+        class FakeEnv:
+            def __init__(self, stop_event):
+                self.stop_event = stop_event
+                self.request_path = "/tmp/rpc/req_000001"
+                self.request_removed = False
+                self.commands = []
+
+            def execute(self, command, cwd="/", timeout=10):
+                self.commands.append(command)
+                if command.startswith("ls -1 "):
+                    return {"output": "" if self.request_removed else self.request_path}
+                if command.startswith("cat "):
+                    return {
+                        "output": json.dumps(
+                            {"tool": "terminal", "args": {"command": "echo hi"}, "seq": 1}
+                        )
+                    }
+                if "base64 -d >" in command:
+                    self.stop_event.set()
+                    return {"output": ""}
+                if command.startswith("rm -f "):
+                    self.request_removed = True
+                    return {"output": ""}
+                return {"output": ""}
+
+        stop_event = threading.Event()
+        env = FakeEnv(stop_event)
+        seen = {}
+
+        def fake_handle_function_call(function_name, function_args, task_id=None, **kwargs):
+            seen["function_name"] = function_name
+            seen["function_args"] = function_args
+            seen["task_id"] = task_id
+            seen["enabled_tools"] = kwargs.get("enabled_tools")
+            return json.dumps({"ok": True})
+
+        with patch("model_tools.handle_function_call", side_effect=fake_handle_function_call):
+            _rpc_poll_loop(
+                env=env,
+                rpc_dir="/tmp/rpc",
+                task_id="task-123",
+                tool_call_log=[],
+                tool_call_counter=[0],
+                max_tool_calls=5,
+                allowed_tools=frozenset({"terminal", "read_file"}),
+                stop_event=stop_event,
+            )
+
+        self.assertEqual(seen["function_name"], "terminal")
+        self.assertEqual(seen["function_args"], {"command": "echo hi"})
+        self.assertEqual(seen["task_id"], "task-123")
+        self.assertEqual(set(seen["enabled_tools"]), {"terminal", "read_file"})
 
 
 @unittest.skipIf(sys.platform == "win32", "UDS not available on Windows")

@@ -1028,10 +1028,15 @@ class AIAgent:
             quiet_mode=self.quiet_mode,
         )
         
-        # Show tool configuration and store valid tool names for validation
+        # Show tool configuration and store resolved tool names locally.
+        # ``valid_tool_names`` remains the set form used for validation; the
+        # ordered ``resolved_tool_names`` list is the per-agent source of truth
+        # for downstream allow-lists such as execute_code.
         self.valid_tool_names = set()
+        self.resolved_tool_names = []
         if self.tools:
-            self.valid_tool_names = {tool["function"]["name"] for tool in self.tools}
+            self.resolved_tool_names = [tool["function"]["name"] for tool in self.tools]
+            self.valid_tool_names = set(self.resolved_tool_names)
             tool_names = sorted(self.valid_tool_names)
             if not self.quiet_mode:
                 print(f"🛠️  Loaded {len(self.tools)} tools: {', '.join(tool_names)}")
@@ -2534,13 +2539,10 @@ class AIAgent:
                         # Format tool response with XML tags
                         tool_response = "<tool_response>\n"
                         
-                        # Try to parse tool content as JSON if it looks like JSON
-                        tool_content = tool_msg["content"]
-                        try:
-                            if tool_content.strip().startswith(("{", "[")):
-                                tool_content = json.loads(tool_content)
-                        except (json.JSONDecodeError, AttributeError):
-                            pass  # Keep as string if not valid JSON
+                        # Try to parse tool content as JSON so structured tool payloads
+                        # survive trajectory export even when prefixed with context like
+                        # "Partial delegation failure:".
+                        tool_content = self._parse_structured_tool_content(tool_msg["content"])
                         
                         tool_index = len(tool_responses)
                         tool_name = (
@@ -2849,6 +2851,34 @@ class AIAgent:
             if self.verbose_logging:
                 logging.warning(f"Failed to dump API request debug payload: {dump_error}")
             return None
+
+    @staticmethod
+    def _parse_structured_tool_content(content: Any) -> Any:
+        """Best-effort parse for tool payloads that embed JSON inside status text."""
+        if not isinstance(content, str):
+            return content
+
+        stripped = content.strip()
+        if not stripped:
+            return content
+
+        decoder = json.JSONDecoder()
+        candidate_indexes = [0]
+        candidate_indexes.extend(
+            idx for idx, char in enumerate(stripped) if char in "[{" and idx != 0
+        )
+
+        for start in candidate_indexes:
+            candidate = stripped[start:]
+            try:
+                parsed, end = decoder.raw_decode(candidate)
+            except json.JSONDecodeError:
+                continue
+            if candidate[end:].strip():
+                continue
+            return parsed
+
+        return content
 
     @staticmethod
     def _clean_session_content(content: str) -> str:
@@ -7004,7 +7034,7 @@ class AIAgent:
                 function_name, function_args, effective_task_id,
                 tool_call_id=tool_call_id,
                 session_id=self.session_id or "",
-                enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                enabled_tools=list(self.resolved_tool_names) if self.resolved_tool_names else None,
                 skip_pre_tool_call_hook=True,
             )
 
@@ -7498,7 +7528,7 @@ class AIAgent:
                         function_name, function_args, effective_task_id,
                         tool_call_id=tool_call.id,
                         session_id=self.session_id or "",
-                        enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                        enabled_tools=list(self.resolved_tool_names) if self.resolved_tool_names else None,
                         skip_pre_tool_call_hook=True,
                     )
                     _spinner_result = function_result
@@ -7518,7 +7548,7 @@ class AIAgent:
                         function_name, function_args, effective_task_id,
                         tool_call_id=tool_call.id,
                         session_id=self.session_id or "",
-                        enabled_tools=list(self.valid_tool_names) if self.valid_tool_names else None,
+                        enabled_tools=list(self.resolved_tool_names) if self.resolved_tool_names else None,
                         skip_pre_tool_call_hook=True,
                     )
                 except Exception as tool_error:

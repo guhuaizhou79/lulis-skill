@@ -41,7 +41,12 @@ logger = logging.getLogger(__name__)
 _tool_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
-def _run_tool_in_thread(tool_name: str, arguments: Dict[str, Any], task_id: str) -> str:
+def _run_tool_in_thread(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    task_id: str,
+    enabled_tools: Optional[List[str]] = None,
+) -> str:
     """
     Run a tool call in a thread pool executor so backends that use asyncio.run()
     internally (modal, docker, daytona) get a clean event loop.
@@ -56,12 +61,22 @@ def _run_tool_in_thread(tool_name: str, arguments: Dict[str, Any], task_id: str)
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(
-                handle_function_call, tool_name, arguments, task_id
+                handle_function_call,
+                tool_name,
+                arguments,
+                task_id,
+                None,
+                enabled_tools=enabled_tools,
             )
             return future.result(timeout=300)
     except RuntimeError:
         # No running event loop -- safe to call directly
-        return handle_function_call(tool_name, arguments, task_id)
+        return handle_function_call(
+            tool_name,
+            arguments,
+            task_id,
+            enabled_tools=enabled_tools,
+        )
 
 
 class ToolContext:
@@ -73,8 +88,24 @@ class ToolContext:
     All calls share the rollout's task_id for session isolation.
     """
 
-    def __init__(self, task_id: str):
+    def __init__(self, task_id: str, enabled_tools: Optional[List[str]] = None):
         self.task_id = task_id
+        self.enabled_tools = list(enabled_tools) if enabled_tools is not None else None
+
+    def _call_tool(self, tool_name: str, arguments: Dict[str, Any], *, threaded: bool = False) -> str:
+        if threaded:
+            return _run_tool_in_thread(
+                tool_name,
+                arguments,
+                self.task_id,
+                enabled_tools=self.enabled_tools,
+            )
+        return handle_function_call(
+            tool_name,
+            arguments,
+            task_id=self.task_id,
+            enabled_tools=self.enabled_tools,
+        )
 
     # -------------------------------------------------------------------------
     # Terminal tools
@@ -96,10 +127,10 @@ class ToolContext:
         logger.debug("ToolContext.terminal [%s backend] task=%s: %s", backend, self.task_id[:8], command[:100])
 
         # Run via thread helper so modal/docker/daytona backends' asyncio.run() doesn't deadlock
-        result = _run_tool_in_thread(
+        result = self._call_tool(
             "terminal",
             {"command": command, "timeout": timeout},
-            self.task_id,
+            threaded=True,
         )
         try:
             return json.loads(result)
@@ -120,9 +151,7 @@ class ToolContext:
         Returns:
             Dict with file content or error
         """
-        result = handle_function_call(
-            "read_file", {"path": path}, task_id=self.task_id
-        )
+        result = self._call_tool("read_file", {"path": path})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -142,9 +171,7 @@ class ToolContext:
         Returns:
             Dict with success status or error
         """
-        result = handle_function_call(
-            "write_file", {"path": path, "content": content}, task_id=self.task_id
-        )
+        result = self._call_tool("write_file", {"path": path, "content": content})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -332,9 +359,7 @@ class ToolContext:
         Returns:
             Dict with search results
         """
-        result = handle_function_call(
-            "search_files", {"pattern": query, "path": path}, task_id=self.task_id
-        )
+        result = self._call_tool("search_files", {"pattern": query, "path": path})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -354,7 +379,7 @@ class ToolContext:
         Returns:
             Dict with search results
         """
-        result = handle_function_call("web_search", {"query": query})
+        result = self._call_tool("web_search", {"query": query})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -370,7 +395,7 @@ class ToolContext:
         Returns:
             Dict with extracted content
         """
-        result = handle_function_call("web_extract", {"urls": urls})
+        result = self._call_tool("web_extract", {"urls": urls})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -390,9 +415,7 @@ class ToolContext:
         Returns:
             Dict with page snapshot or error
         """
-        result = handle_function_call(
-            "browser_navigate", {"url": url}, task_id=self.task_id
-        )
+        result = self._call_tool("browser_navigate", {"url": url})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -405,9 +428,7 @@ class ToolContext:
         Returns:
             Dict with page content/accessibility snapshot
         """
-        result = handle_function_call(
-            "browser_snapshot", {}, task_id=self.task_id
-        )
+        result = self._call_tool("browser_snapshot", {})
         try:
             return json.loads(result)
         except json.JSONDecodeError:
@@ -431,7 +452,7 @@ class ToolContext:
         Returns:
             Raw JSON string result from the tool
         """
-        return _run_tool_in_thread(tool_name, arguments, self.task_id)
+        return self._call_tool(tool_name, arguments, threaded=True)
 
     # -------------------------------------------------------------------------
     # Cleanup

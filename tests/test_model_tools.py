@@ -74,6 +74,31 @@ class TestHandleFunctionCall:
             ),
         ]
 
+    def test_execute_code_forwards_explicit_enabled_tools(self):
+        seen = {}
+
+        def fake_dispatch(function_name, function_args, **kwargs):
+            seen["function_name"] = function_name
+            seen["function_args"] = function_args
+            seen["kwargs"] = kwargs
+            return json.dumps({"ok": True})
+
+        with patch("model_tools.registry.dispatch", side_effect=fake_dispatch):
+            result = json.loads(
+                handle_function_call(
+                    "execute_code",
+                    {"code": "print('hi')"},
+                    task_id="task-1",
+                    enabled_tools=["terminal", "read_file"],
+                )
+            )
+
+        assert result == {"ok": True}
+        assert seen["function_name"] == "execute_code"
+        assert seen["function_args"] == {"code": "print('hi')"}
+        assert seen["kwargs"]["task_id"] == "task-1"
+        assert seen["kwargs"]["enabled_tools"] == ["terminal", "read_file"]
+
 
 # =========================================================================
 # Agent loop tools
