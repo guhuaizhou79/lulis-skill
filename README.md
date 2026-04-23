@@ -4,14 +4,16 @@ A shared repository for reusable OpenClaw skills, supporting framework code, and
 
 ## Layout
 
-- `skills/` → triggerable AgentSkills
-- `frameworks/` → reusable implementation code used by skills
-- `docs/` → repository-wide structure and authoring rules
+- `skills/` -> triggerable OpenClaw skills
+- `frameworks/` -> reusable implementation code used by skills
+- `docs/` -> repository-wide structure and authoring rules
 
 ## Current contents
 
-- `skills/multi-agent-lite/` → lightweight multi-agent orchestration skill
-- `frameworks/multi-agent-lite/` → framework implementation behind the skill
+- `skills/multi-agent-lite/` -> lightweight multi-agent orchestration skill
+- `skills/responses-image-endpoint/` -> custom Responses image gateway skill
+- `frameworks/multi-agent-lite/` -> framework implementation behind the skill
+- `frameworks/responses-image-endpoint/` -> probe and generation implementation for custom image routes
 
 ## Rule of thumb
 
