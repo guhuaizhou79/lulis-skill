@@ -1,7 +1,0 @@
-{
-  "mode": "openclaw",
-  "openclaw": {
-    "agent_id": "main",
-    "timeout": 180
-  }
-}

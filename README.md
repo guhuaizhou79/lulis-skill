@@ -1,31 +1,37 @@
 # lulis-skill
 
-A shared repository for reusable OpenClaw skills, supporting framework code, and merged agent tooling history.
+A repository focused on reusable AgentSkills and the small framework code they explicitly depend on.
 
 ## What is here
 
-This repository started as a shared home for reusable OpenClaw skills and their supporting frameworks. It now also contains additional agent runtime, gateway, CLI, web, and test assets that arrived through a merged development branch.
+This repo now keeps only the skill-layer content:
 
-The practical split is:
+- `skills/` -> bundled skills
+- `optional-skills/` -> official optional skills
+- `frameworks/` -> small reusable framework code used by specific skills
+- `docs/` -> repo conventions for skill and framework organization
 
-- `skills/` -> triggerable OpenClaw skills
-- `frameworks/` -> reusable implementation code used by skills
-- `docs/` -> repo-wide structure and authoring rules for the skill/framework layer
-- top-level runtime folders such as `agent/`, `gateway/`, `hermes_cli/`, `tools/`, `web/`, and `website/` -> merged agent and platform code
+## What was removed
 
-## Current skill and framework contents
+Non-skill agent runtime, gateway, CLI, web app, platform adapters, large test trees, and unrelated execution infrastructure were removed so this repository stays focused on skill authoring and maintenance.
 
-- `skills/multi-agent-lite/` -> lightweight multi-agent orchestration skill
-- `skills/responses-image-endpoint/` -> custom Responses image gateway skill
-- `frameworks/multi-agent-lite/` -> framework implementation behind the orchestration skill
-- `frameworks/responses-image-endpoint/` -> probe and generation implementation for custom image routes
+## Repository rules
 
-## Rule of thumb
+- Put trigger instructions in `SKILL.md`
+- Put detailed references in `references/`
+- Put reusable helper code in `scripts/`
+- Put reusable templates/assets next to the skill when they are part of the skill itself
+- Put larger shared implementation only in `frameworks/`
+- Avoid adding unrelated top-level runtime code back into this repo
 
-- Put workflow guidance and trigger rules in `skills/`
-- Put reusable skill implementation code in `frameworks/`
-- Put repo conventions in `docs/`
-- Keep larger runtime or platform code outside the skill folders
+## Current top-level layout
+
+```text
+skills/
+optional-skills/
+frameworks/
+docs/
+```
 
 ## See also
 

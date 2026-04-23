@@ -1,56 +1,43 @@
 # Repository structure for lulis-skill
 
-This repository is the long-term home for reusable OpenClaw skills and the framework code they depend on.
+This repository is the long-term home for reusable skills and the minimal shared framework code that some skills depend on.
 
 ## Standard structure
 
 ```text
 skills/
-  multi-agent-lite/
-  ...future skills...
+optional-skills/
 frameworks/
-  multi-agent-lite/
 docs/
-  REPO-STRUCTURE.md
-  SKILL-AUTHORING-RULES.md
 ```
 
 ## Placement rules
 
 ### `skills/`
-Use for triggerable AgentSkills only.
-Each skill should contain only:
+Use for bundled triggerable skills.
+Each skill may contain:
 - `SKILL.md`
-- `references/` (optional)
-- `scripts/` (optional)
-- `assets/` (optional)
+- `references/`
+- `scripts/`
+- `templates/`
+- `assets/`
 
-Do not stuff full framework code directly inside a skill folder.
+### `optional-skills/`
+Use for official but non-default skills.
+They follow the same internal structure rules as `skills/`.
 
 ### `frameworks/`
-Use for larger reusable implementations.
-Examples:
-- orchestrators
-- runtimes
-- adapters
-- schemas
-- configs
-- framework docs
+Use only for shared implementation that is reused by one or more skills and is too large to live comfortably inside a single skill directory.
 
 ### `docs/`
-Use for repository-wide conventions.
-Examples:
-- naming rules
-- authoring rules
-- lifecycle rules
-- sync rules
+Use for repository-wide governance and authoring conventions.
 
 ## Naming guidance
 
 - skill folders: lowercase-hyphen-case
 - framework folders: lowercase-hyphen-case
-- avoid spaces, mixed naming styles, and one-off ad-hoc folders
+- avoid ad-hoc top-level product/runtime folders
 
 ## Maintenance rule
 
-If a future addition is reusable beyond one skill, move it to `frameworks/` or `docs/` instead of bloating a single skill folder.
+If new content is not directly serving a skill, it probably does not belong in this repository.

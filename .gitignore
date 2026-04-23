@@ -5,7 +5,6 @@ __pycache__/
 
 # Virtual environments
 /venv/
-/_pycache/
 .venv/
 
 # Editor and local config
@@ -25,35 +24,14 @@ logs/
 data/
 tmp/
 testlogs
-frameworks/multi-agent-lite/artifacts/*.md
-frameworks/multi-agent-lite/runtime/tasks/*.json
-temp_vision_images/
-images/
-wandb/
 
-# Test and sample data
+# Generated / local artifacts
 .pytest_cache/
-examples/
-tests/quick_test_dataset.jsonl
-tests/sample_dataset.jsonl
-source-data/*
-
-# Generated scripts and temp outputs
-run_datagen_kimik2-thinking.sh
-run_datagen_megascience_glm4-6.sh
-run_datagen_sonnet.sh
-
-# JS / frontend
 node_modules/
-browser-use/
-agent-browser/
-hermes_cli/web_dist/
-website/static/api/skills-index.json
-
-# Packaging and build
-hermes_agent.egg-info/
-.release_notes.md
-mini-swe-agent/
+.direnv/
+result
+skills/.hub/
+optional-skills/.hub/
 
 # Private keys and ignored private dirs
 *.ppk
@@ -61,11 +39,3 @@ mini-swe-agent/
 privvy*
 ignored/
 .worktrees/
-environments/benchmarks/evals/
-
-# Skills Hub state
-skills/.hub/
-
-# Nix
-.direnv/
-result
